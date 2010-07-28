@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2010 United States Government as represented by the
+# Administrator of the National Aeronautics and Space Administration
+# (NASA).  All Rights Reserved.
+#
+# This software is distributed under the NASA Open Source Agreement
+# (NOSA), version 1.3.  The NOSA has been approved by the Open Source
+# Initiative.  See http://www.opensource.org/licenses/nasa1.3.php
+# for the complete NOSA document.
+#
+# THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY
+# KIND, EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT
+# LIMITED TO, ANY WARRANTY THAT THE SUBJECT SOFTWARE WILL CONFORM TO
+# SPECIFICATIONS, ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+# A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY THAT
+# THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT
+# DOCUMENTATION, IF PROVIDED, WILL CONFORM TO THE SUBJECT SOFTWARE. THIS
+# AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN ENDORSEMENT BY
+# GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING
+# DESIGNS, HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING
+# FROM USE OF THE SUBJECT SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS
+# ALL WARRANTIES AND LIABILITIES REGARDING THIRD-PARTY SOFTWARE, IF
+# PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS".
+#
+# RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+# GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR
+# RECIPIENT.  IF RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY
+# LIABILITIES, DEMANDS, DAMAGES, EXPENSES OR LOSSES ARISING FROM SUCH USE,
+# INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING FROM,
+# RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND
+# HOLD HARMLESS THE UNITED STATES GOVERNMENT, ITS CONTRACTORS AND
+# SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT, TO THE EXTENT PERMITTED
+# BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+# IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+#
+
+use strict;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use IO::Select;
+use IO::Socket;
+use IO::Socket::INET;
+
+our $VERSION = 0.14;
+
+# default configuration
+my %conf = (
+    alias_last => "-last",
+    alias_text => "unavailable",
+    conf_file => "/etc/ballastrc",
+    data_port => 4411,
+    data_timeout => 2,
+    relay_port => 22,
+);
+
+# parse parameters
+if (!GetOptions(\%conf, "conf_file|c=s", "l")) {
+    die "ERROR: invalid options\n";
+} elsif (scalar(@ARGV) < 1) {
+    die "ERROR: no hostname given\n";
+} elsif (scalar(@ARGV) > 1) {
+    die "ERROR: too many arguments\n";
+}
+
+# parse configuration
+open(FILE, $conf{conf_file}) or
+    die "ERROR: config file $conf{conf_file} does not exist\n";
+while (my $line = <FILE>) {
+    $line =~ s/^\s+|\s+$|\s*#.*//g;
+    if ($line =~ /^(\S+)\s+(.*)/) {
+        $conf{$1} = $2;
+    }
+}
+close FILE;
+die "ERROR: config parameter \"alias_domain\" is not defined\n"
+    if (!$conf{alias_domain});
+die "ERROR: config parameter \"data_host\" is not defined\n"
+    if (!$conf{data_host});
+
+# strip domain and last from given host
+my $alias = $ARGV[0];
+$alias =~ s/$conf{alias_domain}//;
+my $last = $alias =~ s/$conf{alias_last}$//;
+
+my $host;
+if ($conf{"hosts_$alias"}) {
+    if (!$host) {
+        $host = undef;
+        foreach my $dhost (split(/\s+/, $conf{data_host})) {
+            eval {
+                local $SIG{ALRM} = sub {die "alarm\n"};
+                alarm $conf{data_timeout};
+                my $sock = IO::Socket::INET->new(
+                    Proto => "tcp",
+                    PeerAddr => $dhost,
+                    PeerPort => $conf{data_port},
+                    Timeout => $conf{data_timeout},
+                );
+                if ($sock) {
+                    print $sock $alias;
+                    print $sock $conf{alias_last} if ($last);
+                    print $sock " $<\n";
+                    $host = <$sock>;
+                    chomp $host;
+                    close $sock;
+                }
+            };
+            $host = undef if ($@ eq "alarm\n");
+            last if ($host);
+        }
+        alarm 0;
+    }
+
+    $host = $conf{"hosts_$alias"} if (!defined $host);
+
+    die "ERROR: all hosts for alias $alias are $conf{alias_text}\n" if (!$host);
+        
+    my @hosts = split(/\s+/, $host);
+    my $rand = int(rand(scalar(@hosts)));
+    $host = $hosts[$rand];
+} else {
+    $host = $ARGV[0];
+}
+
+if ($conf{l}) {
+    print $host;
+    print $conf{alias_domain} if ($host ne $ARGV[0]);
+    print "\n";
+} elsif (defined $conf{relay_path}) {
+    exec {$conf{relay_path}} ($conf{relay_path}, $host, $conf{relay_port});
+} else {
+    relay($host, $conf{relay_port});
+}
+
+# relay function based on scnc by Patrice <GomoR> Auffret
+# Copyright (c) 2006-2009, GomoR All rights reserved.
+sub relay {
+    my ($host, $port) = @_;
+
+    my $sock = IO::Socket::INET->new(
+        PeerHost => $host,
+        PeerPort => $port,
+        Proto => 'tcp',
+    ) or die "ERROR: cannot connect to $host:$port\n";
+
+    $SIG{INT}  = sub {$sock->close if (defined $sock)};
+    $SIG{CHLD} = 'IGNORE';
+
+    $sock->autoflush(1);
+    STDIN->autoflush(1);
+    STDOUT->autoflush(1);
+
+    binmode $sock;
+    binmode STDIN;
+    binmode STDOUT;
+
+    my $sel = IO::Select->new;
+    $sel->add($sock);
+    $sel->add(\*STDIN);
+
+    my $bytes = 16384;
+    while (my @read = $sel->can_read) {
+        foreach my $fh (@read) {
+            if ($fh == $sock) {
+                my $n = $sock->sysread(my $buf, $bytes);
+                STDOUT->syswrite($buf, $n) if ($n > 0);
+            } elsif ($fh == \*STDIN) {
+                my $n = STDIN->sysread(my $buf, $bytes);
+                $sock->syswrite($buf, $n) if ($n > 0);
+            }
+        }
+    }
+}
+

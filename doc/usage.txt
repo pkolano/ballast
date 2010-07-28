@@ -1,0 +1,68 @@
+Using Ballast
+=============
+
+1. Ballast client
+
+    1.1. SSH Balancing
+
+        The Ballast client is intended for use on bastion and internal
+        hosts.  Users need only know the defined balancing aliases.
+        To connect via ssh to a given alias, the user simply invokes ssh
+        to that alias.  For example:
+
+            ssh foo
+
+        would connect to one of the hosts associated with alias "foo".
+        To connect to the last host the user connected to via the
+        balancer, the user can append "-last" to the alias name.
+        For example:
+
+            ssh foo-last
+
+        would connect to the last host returned to the user for alias
+        "foo".
+
+        While the client can be used directly from beyond an
+        organization's perimeter (assuming the server's listening port
+        is accessible), client requests to the server are unencrypted so
+        are subject to modification if an attacker has control of the
+        network along the path from client to server.  The danger of
+        this scenario is a modified return value from the server that
+        directs the client to connect to a host under the control of the
+        attacker, which can then be used to harvest user passwords.
+        SSH host key checks, however, should prevent the user from
+        accessing unexpected hosts.
+
+        External clients can still effectively connect directly to
+        internal balanced hosts using an appropriate ~/.ssh/config
+        ProxyCommand through a bastion host as discussed in Section
+        4.2.3 of the "INSTALL" document.
+
+    1.2. General-Purpose Balancing
+
+        To list the host that would have been selected for the user,
+        the client can be invoked directly with a -l option and the
+        chosen alias.  For example:
+
+            ballast -l foo
+
+        would print the host that has been selected for alias "foo" to
+        the terminal instead of connecting to it.  This functionality
+        allows Ballast to act as a general-purpose load balancing
+        solution beyond just SSH.  This functionality is also useful for
+        testing purposes.
+
+
+2. Ballast server
+
+    The ballast-dumpdb program can be used to display the load
+    information stored in the server's database.  It takes a single
+    optional argument, which is a regular expression that can be used to
+    filter the output.  For example, to see all load information
+    associated with a host foo1, the following command can be issued:
+
+        ballast-dumpdb foo1:
+
+    Some values are computed on the fly so will not be listed in the
+    database.  These include client_ip, random, user_*, and *_rank.
+

@@ -1,0 +1,270 @@
+#!/usr/bin/perl -T
+#
+# Copyright (C) 2010 United States Government as represented by the
+# Administrator of the National Aeronautics and Space Administration
+# (NASA).  All Rights Reserved.
+#
+# This software is distributed under the NASA Open Source Agreement
+# (NOSA), version 1.3.  The NOSA has been approved by the Open Source
+# Initiative.  See http://www.opensource.org/licenses/nasa1.3.php
+# for the complete NOSA document.
+#
+# THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY
+# KIND, EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT
+# LIMITED TO, ANY WARRANTY THAT THE SUBJECT SOFTWARE WILL CONFORM TO
+# SPECIFICATIONS, ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+# A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY THAT
+# THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT
+# DOCUMENTATION, IF PROVIDED, WILL CONFORM TO THE SUBJECT SOFTWARE. THIS
+# AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN ENDORSEMENT BY
+# GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING
+# DESIGNS, HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING
+# FROM USE OF THE SUBJECT SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS
+# ALL WARRANTIES AND LIABILITIES REGARDING THIRD-PARTY SOFTWARE, IF
+# PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS".
+#
+# RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+# GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR
+# RECIPIENT.  IF RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY
+# LIABILITIES, DEMANDS, DAMAGES, EXPENSES OR LOSSES ARISING FROM SUCH USE,
+# INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING FROM,
+# RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND
+# HOLD HARMLESS THE UNITED STATES GOVERNMENT, ITS CONTRACTORS AND
+# SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT, TO THE EXTENT PERMITTED
+# BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+# IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+#
+
+use strict;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use IO::Socket;
+use MIME::Base64;
+use Storable qw(nfreeze);
+use Sys::Hostname;
+
+our $VERSION = 0.14;
+
+my %conf = (
+    conf_file => "/etc/ballastrc",
+    data_port => 4411,
+    key_file => "/etc/ballast.key",
+    user_load => 1,
+);
+
+# parse parameters
+GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
+
+# parse configuration
+open(FILE, $conf{conf_file}) or die "Unable to load config file: $!\n";
+while (my $line = <FILE>) {
+    $line =~ s/^\s+|\s+$|\s*#.*//g;
+    if ($line =~ /^(\S+)\s+(.*)/) {
+        $conf{$1} = $2;
+    }
+}
+close FILE;
+die "Data alias not defined\n" if (!$conf{data_alias});
+die "Data host not defined\n" if (!$conf{data_host});
+
+if ($conf{data_cipher}) {
+    open(FILE, $conf{key_file}) or die "Unable to load key file: $!\n";
+    my $key = <FILE>;
+    close FILE;
+
+    # untaint key
+    $key = $1 if ($key =~ /(.*)/);
+
+    require Crypt::CBC;
+    $conf{-cbc} = Crypt::CBC->new(
+        -key => $key,
+        -cipher => $conf{data_cipher},
+    );
+}
+
+my %load;
+$load{alias} = $conf{data_alias};
+$load{host} = hostname;
+$load{host} =~ s/\..*//;
+$load{time} = time;
+
+# collect i/o load
+if (open(FILE, "/proc/diskstats")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        my @cols = split(/\s+/, $line);
+        splice(@cols, 0, 3);
+        next if (scalar(@cols) != 11);
+        $load{d_io_reads} += $cols[0];
+        $load{d_io_read_sectors} += $cols[2];
+        $load{d_io_read_time} += $cols[3];
+        $load{d_io_writes} += $cols[4];
+        $load{d_io_write_sectors} += $cols[6];
+        $load{d_io_write_time} += $cols[7];
+    }
+    close FILE;
+    $load{d_io_ops} = $load{d_io_reads} + $load{d_io_writes};
+    $load{d_io_sectors} = $load{d_io_read_sectors} + $load{d_io_write_sectors};
+    $load{d_io_time} = $load{d_io_read_time} + $load{d_io_write_time};
+}
+
+# collect average load and processes
+if (open(FILE, "/proc/loadavg")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        my @cols = split(/\s+/, $line);
+        next if (scalar(@cols) != 5);
+        $load{load_1} = $cols[0];
+        $load{load_5} = $cols[1];
+        $load{load_15} = $cols[2];
+        $load{procs} = $cols[3];
+        $load{procs} =~ s/.*\///;
+    }
+    close FILE;
+}
+
+# collect memory load
+if (open(FILE, "/proc/meminfo")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        $load{ram_free} = $1 if ($line =~ /MemFree:\s*(\d+)/);
+        $load{ram_total} = $1 if ($line =~ /MemTotal:\s*(\d+)/);
+        $load{swap_free} = $1 if ($line =~ /SwapFree:\s*(\d+)/);
+        $load{swap_total} = $1 if ($line =~ /SwapTotal:\s*(\d+)/);
+    }
+    $load{ram} = $load{ram_total} - $load{ram_free};
+    $load{swap} = $load{swap_total} - $load{swap_free};
+    close FILE;
+}
+
+# collect network load
+if (open(FILE, "/proc/net/dev")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        my @cols = split(/:|\s+/, $line);
+        next if (scalar(@cols) != 17 || $cols[1] !~ /^\d+$/);
+        $load{d_net_read_bytes} += $cols[1];
+        $load{d_net_reads} += $cols[2];
+        $load{d_net_write_bytes} += $cols[9];
+        $load{d_net_writes} += $cols[10];
+    }
+    close FILE;
+    $load{d_net_ops} = $load{d_net_reads} + $load{d_net_writes};
+    $load{d_net_bytes} = $load{d_net_read_bytes} + $load{d_net_write_bytes};
+}
+
+# collect cpu and other misc load
+if (open(FILE, "/proc/stat")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        $load{boot_time} = $1 if ($line =~ /^btime\s+(\d+)/);
+        $load{d_cpu} += $1 + $2 + $3 if ($line =~ /^cpu\s+(\d+)\s+(\d+)\s+(\d+)/);
+        $load{d_intrs} = $1 if ($line =~ /^intr\s+(\d+)/);
+        $load{d_proc_switches} = $1 if ($line =~ /^ctxt\s+(\d+)/);
+        $load{d_proc_forks} = $1 if ($line =~ /^processes\s+(\d+)/);
+        $load{uptime} = $load{time} - $load{boot_time};
+        $load{cpus}++ if ($line =~ /^cpu\d+/);
+    }
+    close FILE;
+}
+
+# collect virtual memory load
+if (open(FILE, "/proc/vmstat")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$//g;
+        $load{d_page_in} += $1 if ($line =~ /^pgpgin\s+(\d+)/);
+        $load{d_page_out} += $1 if ($line =~ /^pgpgout\s+(\d+)/);
+        $load{d_swap_in} += $1 if ($line =~ /^pswpin\s+(\d+)/);
+        $load{d_swap_out} += $1 if ($line =~ /^pswpout\s+(\d+)/);
+    }
+    close FILE;
+}
+
+# collect per user load if specified
+if ($conf{user_load}) {
+    foreach my $file (glob("/proc/[0-9]*/stat")) {
+        open(FILE, $file) or next;
+        my $line = <FILE>;
+        close FILE;
+        my @cols = split(/\s+/, $line);
+        my $pid = $cols[0];
+        my @stat = stat "/proc/$pid";
+        my $cmd = $cols[1];
+        $cmd =~ s/\s+|[{}()]//g;
+
+        # ignore root processes that are not sshd or dropbear
+        next if ($stat[4] == 0 && $cmd !~ /^(?:sshd|dropbear)$/);
+
+        my $proc = "cmd:$cmd";
+        $proc .= " cpu:" . ($cols[13] + $cols[14]);
+        $proc .= " gid:$stat[5]";
+        $proc .= " mem:$cols[22]";
+        $proc .= " ram:$cols[23]";
+        $proc .= " pid:$pid";
+        $proc .= " ppid:$cols[3]";
+        $proc .= " time:" .
+            ($load{time} - $load{boot_time} - int($cols[21] / 100));
+        $proc .= " uid:$stat[4]";
+
+        # collect per user i/o load if available
+        if (open(FILE, "/proc/$pid/io")) {
+            my ($bytes, $ops);
+            while (my $line = <FILE>) {
+                if ($line =~ /^rchar:\s*(\d+)/) {
+                    $proc .= " io_read_bytes:$1";
+                    $bytes += $1;
+                } elsif ($line =~ /^wchar:\s*(\d+)/) {
+                    $proc .= " io_write_bytes:$1";
+                    $bytes += $1;
+                } elsif ($line =~ /^syscr:\s*(\d+)/) {
+                    $proc .= " io_reads:$1";
+                    $ops += $1;
+                } elsif ($line =~ /^syscw:\s*(\d+)/) {
+                    $proc .= " io_writes:$1";
+                    $ops += $1;
+                }
+            }
+            $proc .= " io_ops:$ops";
+            $proc .= " io_bytes:$bytes";
+        }
+        $load{"pid_$pid"} = $proc;
+    }
+}
+
+# untaint PATH
+$ENV{PATH} = "/bin:/usr/bin:/usr/local/bin";
+
+# execute user-defined hook if specified
+if (-x $conf{load_hook} && open(FILE, "$conf{load_hook}|")) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s*(?:#.*)?|\s+$//g;
+        if ($line =~ /^(\S+)\s+(.*)/) {
+            $load{$1} = $2;
+        }
+    }
+    close FILE;
+}
+
+# convert load to single data string
+my $data = "#ballast#" . nfreeze(\%load);
+if ($conf{data_cipher}) {
+    # encrypt data if specified
+    $data = $conf{-cbc}->encrypt_hex($data);
+} else {
+    $data = encode_base64($data, "");
+}
+
+# send data to each server specified
+foreach my $host (split(/\s+/, $conf{data_host})) {
+    my $sock = IO::Socket::INET->new(
+        Proto    => 'tcp',
+        PeerAddr => $host,
+        PeerPort => $conf{data_port},
+    );
+    if (!$sock) {
+        print STDERR "Unable to contact server $host\n";
+    } else {
+        print $sock "#$data\n";
+        close $sock;
+    }
+}
+

@@ -1,0 +1,377 @@
+#!/usr/bin/perl -T
+#
+# Copyright (C) 2010 United States Government as represented by the
+# Administrator of the National Aeronautics and Space Administration
+# (NASA).  All Rights Reserved.
+#
+# This software is distributed under the NASA Open Source Agreement
+# (NOSA), version 1.3.  The NOSA has been approved by the Open Source
+# Initiative.  See http://www.opensource.org/licenses/nasa1.3.php
+# for the complete NOSA document.
+#
+# THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY
+# KIND, EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT
+# LIMITED TO, ANY WARRANTY THAT THE SUBJECT SOFTWARE WILL CONFORM TO
+# SPECIFICATIONS, ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+# A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY THAT
+# THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT
+# DOCUMENTATION, IF PROVIDED, WILL CONFORM TO THE SUBJECT SOFTWARE. THIS
+# AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN ENDORSEMENT BY
+# GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING
+# DESIGNS, HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING
+# FROM USE OF THE SUBJECT SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS
+# ALL WARRANTIES AND LIABILITIES REGARDING THIRD-PARTY SOFTWARE, IF
+# PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS".
+#
+# RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+# GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR
+# RECIPIENT.  IF RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY
+# LIABILITIES, DEMANDS, DAMAGES, EXPENSES OR LOSSES ARISING FROM SUCH USE,
+# INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING FROM,
+# RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND
+# HOLD HARMLESS THE UNITED STATES GOVERNMENT, ITS CONTRACTORS AND
+# SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT, TO THE EXTENT PERMITTED
+# BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+# IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+#
+
+package Ballast;
+
+use base qw(Net::Server::Multiplex);
+use strict;
+use Fcntl;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use MIME::Base64;
+use SDBM_File;
+use Storable qw(thaw);
+
+our $VERSION = 0.15;
+
+# default configuration
+my %conf = (
+    alias_last => "-last",
+    conf_file => "/etc/ballastrc",
+    data_port => 4411,
+    host_timeout => 180,
+    key_file => "/etc/ballast.key",
+    run_setsid => 1,
+    syslog_facility => "syslog",
+    syslog_ident => "ballast",
+    syslog_logopt => "ndelay,pid",
+    user_sum => "cpu mem ram io_bytes io_ops io_reads io_read_bytes io_writes io_write_bytes",
+);
+
+# parse parameters (preserve @ARGV for Net::Server)
+my @save_argv = @ARGV;
+GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
+@ARGV = @save_argv;
+
+# parse configuration
+my $paren_re;
+$paren_re = qr{\((?:(?>[^()]+)|(??{$paren_re}))*\)}x;
+open(FILE, $conf{conf_file}) or die "Unable to load config file: $!\n";
+while (my $line = <FILE>) {
+    $line =~ s/^\s+|\s+$|\s*#.*//g;
+    if ($line =~ /^(\S+)\s+(.*)/) {
+        my ($key, $val) = ($1, $2);
+        if ($key =~ /^policy_/) {
+            $val =~ s/(?!(?:cmp|eq|le|lt|ge|gt|ne)\W)(?<!\w)((?:abs|product|q|qr|sum)\s*$paren_re|[a-zA-Z]\w*)/load(q{$1})/g;
+        }
+        $conf{$key} = $val;
+    }
+}
+close FILE;
+
+# set up encryption if configured
+if ($conf{data_cipher}) {
+    open(FILE, $conf{key_file}) or die "Unable to load key file: $!\n";
+    my $key = <FILE>;
+    close FILE;
+
+    # untaint key
+    $key = $1 if ($key =~ /(.*)/);
+
+    require Crypt::CBC;
+    $conf{-cbc} = Crypt::CBC->new(
+        -key => $key,
+        -cipher => $conf{data_cipher},
+    );
+}
+
+# tie persistent load database to hash
+my %load;
+tie(%load, 'SDBM_File', $conf{data_db}, O_RDWR | O_CREAT, 0600) or
+    die "Unable to tie load database: $!\n";
+
+# function to handle evaluation of policy expressions
+my %load_vars;
+sub load {
+    my $expr = shift;
+    $expr =~ s/^\s+|\s+$//g;
+    my $return;
+    if ($expr =~ /q\s*\((.*)\)/) {
+        # quote operator
+        return $1;
+    } elsif ($expr =~ /qr\s*\((.*)\)/) {
+        # regex quote operator
+        return qr($1);
+    } elsif ($expr =~ /abs\s*\((.*)\)/) {
+        # absolute value
+        return abs(eval $1);
+    } elsif ($expr =~ /(sum|product)\s*\((.*)\)/) {
+        my ($op, $arg0) = ($1, $2);
+        my $result = $op eq 'sum' ? 0 : 1;
+        foreach my $sid (grep(/^$load_vars{host}:sid_/, keys(%load))) {
+            my $uid = $load{$sid};
+            if ($uid =~ /(?:^|\s)uid:(\d+)/) {
+                $uid = $1;
+                my $arg = $arg0;
+                $arg =~ s/user_i_/uid_$uid\_/g;
+                $arg =~ s/((?:sum|product)\s*$paren_re|[a-zA-Z]\w*)/load(q{$1})/g;
+                my $val = eval $arg;
+                $result = $op eq 'sum' ? $result + $val : $result * $val;
+            }
+        }
+        $return = $result;
+    } elsif ($expr =~ /(uid_\d+|user)_(\w+)/) {
+        my ($uid, $metric) = ($1, $2);
+        if ($uid eq 'user') {
+            $uid = $load_vars{uid};
+        } else {
+            $uid =~ s/\D*//g;
+        }
+        my $rank = $metric =~ s/_rank$//;
+
+        my $uval = $load{"uid_$uid"};
+        if ($uval =~ /(?:^|\s)$metric:(\S+)/) {
+            $uval = $1;
+            if ($rank) {
+                # higher rank indicates higher usage
+                foreach my $uid (grep(/^uid_/, keys(%load))) {
+                    # increase rank for any users with higher value of given metric
+                    $rank++ if ($load{$uid} =~ /(?:^|\s)$metric:(\S+)/ && $1 < $uval);
+                }
+                $return = $rank;
+            } else {
+                $return = $uval;
+            }
+        }
+    } elsif ($expr eq 'user_uid') {
+        $return = $load_vars{uid};
+    } elsif ($expr eq 'users') {
+        $return = $load{users};
+    } elsif ($expr eq 'random') {
+        $return = int(rand(100)) + 1;
+    } elsif ($expr eq 'client_ip') {
+        $return = $load_vars{client_ip};
+    } else {
+        $return = $load{"$load_vars{host}:$expr"};
+    }
+    # return default value of 1 if return not defined
+    return defined $return ? $return : 1;
+}
+
+# called by Net::Server on accepted connection
+sub mux_input {
+    my ($self, $mux, $fh, $data) = @_;
+
+    # set client_ip for load function
+    $load_vars{client_ip} = $self->{net_server}->{server}->{peeraddr};
+    while ($$data =~ s/^(.*?)\r?\n//) {
+        my $text = $1;
+        if ($text =~ /^([\w-]+)\s+(\d+)$/) {
+            my ($alias, $uid) = ($1, $2);
+            my $last = $alias =~ s/$conf{alias_last}$// ? $conf{alias_last} : "";
+            my $return = "";
+            if ($last && $load{"last_$alias\_$uid"}) {
+                # return last host selected
+                $return = $load{"last_$alias\_$uid"};
+            } else {
+                # find hosts that map to given alias
+                my @hosts = grep(/:alias$/, keys(%load));
+                my @min_hosts;
+                my $min;
+                my $time = time;
+                # set uid for load function
+                $load_vars{uid} = $uid;
+                foreach my $host (@hosts) {
+                    next if ($load{$host} ne $alias);
+                    $host =~ s/:alias//;
+                    if ($time > $load{"$host:time"} + $conf{host_timeout}) {
+                        # assume host down if host_timeout elapsed
+                        $self->{net_server}->log(4,
+                            "ignoring stale data for host $host");
+                        next;
+                    }
+                    # set host for load function
+                    $load_vars{host} = $host;
+                    my $val = eval($conf{"policy_$alias"});
+                    $self->{net_server}->log(4,
+                        "host $host evaluates to $val for $alias$last/$uid from $load_vars{client_ip}");
+                    if (0 <= $val && (!defined $min || $val < $min)) {
+                        @min_hosts = ($host);
+                        $min = $val;
+                    } elsif (defined $min && $val == $min) {
+                        push(@min_hosts, $host);
+                    }
+                }
+                $return = $min_hosts[int(rand(scalar(@min_hosts)))]
+                    if (scalar(@min_hosts) > 0);
+            }
+            $load{"last_$alias\_$uid"} = $return;
+            $self->{net_server}->log(2,
+                "$alias$last/$uid returns \"$return\" to $load_vars{client_ip}");
+            print "$return\n";
+        } elsif ($text =~ /^#(.*)/) {
+            $text = $1;
+            if ($conf{data_cipher}) {
+                # encrypt data if specified
+                $text = $conf{-cbc}->decrypt_hex($text);
+            } else {
+                # ensure text has no spaces when not encrypted
+                $text = decode_base64($text);
+            }
+            if ($text =~ s/^#ballast#//) {
+                my %load_new = %{thaw($text)};
+                my $host = $load_new{host};
+                return if (!$host);
+
+                my %seen;
+                # update load information
+                while (my ($key, $val) = each %load_new) {
+                    $seen{"$host:$key"} = 1;
+                    if ($key =~ /^d_(\S+)/) {
+                        $seen{"$host:$1"} = 1;
+                        # update differential loads
+                        $load{"$host:$1"} = $val - $load{"$host:$key"};
+                        # scale difference based on 60 second interval
+                        my $scale = $load_new{time} - $load{"$host:time"};
+                        $load{"$host:$1"} *= 60.0 / $scale if ($scale > 0);
+                    }
+                    # replace stored load values
+                    $load{"$host:$key"} = $val;
+                }
+
+                # update session totals
+                my @pids = grep(/^$host:pid_/, keys(%load));
+                foreach my $pid (@pids) {
+                    my $sid = session_id($pid);
+                    next if ($sid =~ /sid_unknown/);
+                    my %sess = map {split(/:/, $_)} split(/\s+/, $load{$sid});
+                    my %proc = map {split(/:/, $_)} split(/\s+/, $load{$pid});
+                    if ($sess{last} != $load_new{time}) {
+                        $sess{last} = $load_new{time};
+                        # clear session totals
+                        foreach my $key (split(/\s+/, $conf{user_sum})) {
+                            $sess{$key} = 0;
+                        }
+                    }
+
+                    my $key0;
+                    if ($seen{$pid}) {
+                        $seen{$sid} = 1;
+                    } else {
+                        $key0 = "dead_";
+                    }
+                    foreach my $key (split(/\s+/, $conf{user_sum})) {
+                        $sess{"$key0$key"} += $proc{$key};
+                    }
+                    $sess{time} = $proc{time} if ($sess{time} < $proc{time});
+                    $sess{uid} = $proc{uid} if ($proc{uid} != 0);
+
+                    # store updated session
+                    $load{$sid} = join(" ", map {"$_:$sess{$_}"} keys(%sess));
+                }
+
+                # update number of sessions as they are processed
+                $load{"$host:sessions"} = 0;
+                $seen{"$host:sessions"} = 1;
+
+                # update user running averages
+                my @sids = grep(/^$host:sid_/, keys(%load));
+                foreach my $sid (@sids) {
+                    my %sess = map {split(/:/, $_)} split(/\s+/, $load{$sid});
+                    if (!$sess{uid}) {
+                        # ignore sessions with root or undefined uid
+                        $seen{$sid} = 0;
+                        next;
+                    }
+                    $load{"$host:sessions"}++;
+
+                    # add in numbers from dead processes
+                    foreach my $key (split(/\s+/, $conf{user_sum})) {
+                        $sess{$key} += $sess{"dead_$key"};
+                    }
+                    $load{$sid} = join(" ", map {"$_:$sess{$_}"} keys(%sess));
+                    next if ($seen{$sid});
+
+                    # update running average of each field
+                    my $uid = "uid_$sess{uid}";
+                    my %user = map {split(/:/, $_)} split(/\s+/, $load{$uid});
+                    $load{users}++ if (!$user{sessions});
+                    $user{sessions}++;
+                    foreach my $key (split(/\s+/, "time $conf{user_sum}")) {
+                        $user{$key} += ($sess{$key} - $user{$key}) / $user{sessions};
+                    }
+                    # store updated user
+                    $load{$uid} = join(" ", map {"$_:$user{$_}"} keys(%user));
+                }
+
+                # delete stale data that has not been updated
+                foreach my $key (keys(%load)) {
+                    # only delete data from same host
+                    next if ($key !~ /^$host:/);
+                    delete $load{$key} if (!$seen{$key});
+                }
+            }
+        }
+    }
+}
+
+# find ssh session pid from any currently running pid
+sub session_id {
+    my $pid = shift;
+    my $proc = $load{$pid};
+    if ($proc =~ /(?:^|\s)cmd:(?:sshd|dropbear)/) {
+        # process is ssh server fork so return pid
+        $pid =~ s/:pid_/:sid_/;
+        return $pid;
+    } elsif ($proc =~ /(?:^|\s)ppid:(\d+)/) {
+        # recursively compute session from parent pid
+        my $ppid = $1;
+        $pid =~ s/:pid_(\d+)/:pid_$ppid/;
+        return session_id($pid);
+    } else {
+        # session unknown if no parent pid
+        $pid =~ s/:pid_.*/:sid_unknown/;
+        return $pid;
+    }
+}
+
+# called by Net::Server on server close
+sub pre_server_close_hook {
+    # untie db (probably done automatically by perl anyway)
+    untie %load;
+}
+
+# convert relevant config to Net::Server namespace
+my %net_server;
+$net_server{allow} = $conf{tcp_allow} if ($conf{tcp_allow});
+$net_server{deny} = $conf{tcp_deny} if ($conf{tcp_deny});
+$net_server{group} = $conf{run_group} if ($conf{run_group});
+$net_server{log_file} = $conf{log_file} if ($conf{log_file});
+$net_server{log_level} = $conf{log_level} if ($conf{log_level});
+$net_server{pid_file} = $conf{pid_file} if ($conf{pid_file});
+$net_server{port} = $conf{data_port} if ($conf{data_port});
+$net_server{setsid} = $conf{run_setsid} if ($conf{run_setsid});
+$net_server{syslog_facility} = $conf{syslog_facility}
+    if ($conf{syslog_facility});
+$net_server{syslog_ident} = $conf{syslog_ident} if ($conf{syslog_ident});
+$net_server{syslog_logopt} = $conf{syslog_logopt} if ($conf{syslog_logopt});
+$net_server{user} = $conf{run_user} if ($conf{run_user});
+
+# start server
+Ballast->run(%net_server);
+
+1;
+

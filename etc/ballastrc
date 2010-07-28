@@ -1,0 +1,172 @@
+#
+# Skeleton configuration file for Ballast.
+#
+# The Ballast agent, client, and server can all share this file.
+#
+# The header of each section indicates one or more components to which
+# the items within that section pertain to.
+#
+# Items that are commented out show the default value.
+#
+# A value of nodefault indicates no default value for that item.
+#
+# Items that are not commented out indicate values that must be
+# explicitly configured.  The values given for these items are
+# examples only.
+#
+
+
+########################
+#### Ballast agent  ####
+########################
+#### Ballast client ####
+########################
+#### Ballast server ####
+########################
+
+# port used for server communication
+#data_port 4411
+
+
+########################
+#### Ballast agent  ####
+########################
+#### Ballast client ####
+########################
+
+# host name(s) and/or IP address(es) of Ballast server(s)
+data_host myserver1 myserver2
+
+
+########################
+#### Ballast client ####
+########################
+#### Ballast server ####
+########################
+
+# suffix that triggers return of last chosen host for given alias/user
+#alias_last -last
+
+
+########################
+#### Ballast agent  ####
+########################
+#### Ballast server ####
+########################
+
+# cipher that should be used to encrypt data sent to server
+#   (this is strongly recommended)
+#   (requires Crypt::CBC module and Crypt::X module for chosen cipher X)
+#   (example: data_cipher Rijndael)
+#data_cipher nodefault
+
+# file containing encryption key
+#   (should only be readable by agent and server user)
+#   (encryption key may be any text value)
+#   (example: key_file /etc/ballast.key)
+#key_file nodefault
+
+
+########################
+#### Ballast agent  ####
+########################
+
+# alias to which collected data pertains
+data_alias foo
+
+# location of executable called to generate custom load data
+#   (example: load_hook /usr/local/bin/myload
+#load_hook nodefault
+
+# collect user specific information
+#user_load 1
+
+
+########################
+#### Ballast client ####
+########################
+
+# domain for which aliases are relevant
+#   (value must begin with a period ".")
+alias_domain .example.com
+
+# text that will be displayed when no host available
+#   (this will complete the message "ERROR: all hosts for alias foo are ...")
+#alias_text unavailable
+
+# default set of hosts for each alias when server cannot be contacted
+#   (form is hosts_X where X is the name of an alias)
+#   (this can be a subset of the actual hosts for each alias)
+hosts_foo foo1 foo2 foo3
+hosts_bar bar1 bar2
+
+# amount of time to wait for server before default host set used
+#   (if multiple data servers are defined, will wait this amount for each)
+#data_timeout 2
+
+# path to tcp relay
+#   (perl client has beta relay feature built-in so this can be commented out)
+#   (c client requires external program such as netcat or tcpconnect)
+relay_path /usr/bin/netcat
+
+# port used to connect to sshd by tcp relay
+#relay_port 22
+
+
+########################
+#### Ballast server ####
+########################
+
+# time in seconds to wait for agent data before host considered down
+#host_timeout 180
+
+# fields for which running averages will be kept for each user
+#   (do not modify this unless you know what you're doing)
+#user_sum cpu mem ram io_bytes io_ops io_reads io_read_bytes io_writes io_write_bytes
+
+# location of database
+#   (directory must exist, but file will be created)
+data_db /var/lib/ballast/ballast.db
+
+# regex to specify which ips are allowed to connect
+#   (recommended if data_port is externally accessible)
+#   (example: tcp_allow ^192\.168\.)
+#tcp_allow nodefault
+
+# regex to specify which ips are not allowed to connect
+#   (example: tcp_deny ^192\.168\.)
+#tcp_deny nodefault
+
+# policy expression to be evaluated across all hosts
+#   (form is policy_X where X is the name of an alias)
+policy_foo cpu * ram * io_sectors * net_bytes
+policy_bar load_5
+
+# location of log file or Sys::Syslog to log via syslog
+#log_file nodefault
+
+# log level from 0 to 4 (off to very verbose)
+#   (currently, there is only logging at levels 2 and 4)
+#log_level 2
+
+# location of pid file
+#pid_file nodefault
+
+# group that server will run as
+#run_group nodefault
+
+# run server in background
+#run_setsid 1
+
+# user that server will run as
+#run_user nodefault
+
+# syslog facility when log_file is Sys::Syslog
+#syslog_facility syslog
+
+# syslog identifier when log_file is Sys::Syslog
+#syslog_ident ballast
+
+# syslog log options when log_file is Sys::Syslog
+#syslog_logopt ndelay,pid
+

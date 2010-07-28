@@ -1,0 +1,20 @@
+CHANGES
+=======
+
+* Ballast 1.4 (07/28/10)
+    - First public release
+
+* Ballast 1.5 (07/28/10)
+    - Added change log
+    - Fixed missing parentheses in policy samples
+    - Term "users" is now computed during data ingestion instead of
+        dynamically
+    - Added logging of host policy values and stale data notification
+        at log level 4
+    - Fixed evaluation of abs()
+    - Made minor changes to docs in various places
+    - Added default conf location to ballast-logstats and fixed
+        exit when conf file not available
+    - Modified log file parsing in ballast-logstats to be more precise
+    - Readded quotes to logging of selection at log level 2
+

@@ -1,0 +1,214 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2010 United States Government as represented by the
+# Administrator of the National Aeronautics and Space Administration
+# (NASA).  All Rights Reserved.
+#
+# This software is distributed under the NASA Open Source Agreement
+# (NOSA), version 1.3.  The NOSA has been approved by the Open Source
+# Initiative.  See http://www.opensource.org/licenses/nasa1.3.php
+# for the complete NOSA document.
+#
+# THE SUBJECT SOFTWARE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY OF ANY
+# KIND, EITHER EXPRESSED, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT
+# LIMITED TO, ANY WARRANTY THAT THE SUBJECT SOFTWARE WILL CONFORM TO
+# SPECIFICATIONS, ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+# A PARTICULAR PURPOSE, OR FREEDOM FROM INFRINGEMENT, ANY WARRANTY THAT
+# THE SUBJECT SOFTWARE WILL BE ERROR FREE, OR ANY WARRANTY THAT
+# DOCUMENTATION, IF PROVIDED, WILL CONFORM TO THE SUBJECT SOFTWARE. THIS
+# AGREEMENT DOES NOT, IN ANY MANNER, CONSTITUTE AN ENDORSEMENT BY
+# GOVERNMENT AGENCY OR ANY PRIOR RECIPIENT OF ANY RESULTS, RESULTING
+# DESIGNS, HARDWARE, SOFTWARE PRODUCTS OR ANY OTHER APPLICATIONS RESULTING
+# FROM USE OF THE SUBJECT SOFTWARE.  FURTHER, GOVERNMENT AGENCY DISCLAIMS
+# ALL WARRANTIES AND LIABILITIES REGARDING THIRD-PARTY SOFTWARE, IF
+# PRESENT IN THE ORIGINAL SOFTWARE, AND DISTRIBUTES IT "AS IS".
+#
+# RECIPIENT AGREES TO WAIVE ANY AND ALL CLAIMS AGAINST THE UNITED STATES
+# GOVERNMENT, ITS CONTRACTORS AND SUBCONTRACTORS, AS WELL AS ANY PRIOR
+# RECIPIENT.  IF RECIPIENT'S USE OF THE SUBJECT SOFTWARE RESULTS IN ANY
+# LIABILITIES, DEMANDS, DAMAGES, EXPENSES OR LOSSES ARISING FROM SUCH USE,
+# INCLUDING ANY DAMAGES FROM PRODUCTS BASED ON, OR RESULTING FROM,
+# RECIPIENT'S USE OF THE SUBJECT SOFTWARE, RECIPIENT SHALL INDEMNIFY AND
+# HOLD HARMLESS THE UNITED STATES GOVERNMENT, ITS CONTRACTORS AND
+# SUBCONTRACTORS, AS WELL AS ANY PRIOR RECIPIENT, TO THE EXTENT PERMITTED
+# BY LAW.  RECIPIENT'S SOLE REMEDY FOR ANY SUCH MATTER SHALL BE THE
+# IMMEDIATE, UNILATERAL TERMINATION OF THIS AGREEMENT.
+#
+
+use strict;
+use Date::Parse;
+use Getopt::Long qw(:config bundling no_ignore_case require_order);
+use Socket;
+use Text::Table;
+
+our $VERSION = 0.15;
+
+# default configuration
+my %conf = (
+    conf_file => "/etc/ballastrc",
+    syslog_ident => "ballast",
+);
+
+# parse parameters
+GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
+
+# parse configuration
+if (open(FILE, $conf{conf_file})) {
+    while (my $line = <FILE>) {
+        $line =~ s/^\s+|\s+$|\s*#.*//g;
+        if ($line =~ /^(\S+)\s+(.*)/) {
+            $conf{$1} = $2;
+        }
+    }
+    close FILE;
+}
+
+my %all;
+my @row;
+my $t;
+my $now = time;
+my $week = 60 * 60 * 24 * 7;
+
+while (<STDIN>) {
+    if (/(.*)\s+\S+\s+$conf{syslog_ident}.*\s+(\w+)\/(\d+)\s+returns\s+"([^"]*)"\s+to\s+(\S+)/) {
+        my ($time, $alias, $uid, $hosts, $src) = ($1, $2, $3, $4, $5);
+        my $secs = str2time($time);
+        next if ($now - $secs > $week);
+        my @date = localtime($secs);
+        my $day = sprintf("%02d", $date[4] + 1) . "/" .
+            sprintf("%02d", $date[3]) . "/" .
+            sprintf("%02d", $date[5] % 100);
+        my $tmp = gethostbyaddr(inet_aton($src), AF_INET);
+        $src = $tmp if ($tmp);
+        $all{"day:$day src:$src uid:$uid"}++;
+        $all{"day:$day uid:$uid"}++;
+        $all{"src:$src uid:$uid"}++;
+        $all{"uid:$uid"}++;
+        $all{"day:$day"} = 1;
+        $all{"src:$src"} = 1;
+        $hosts = "none" if (!$hosts);
+        foreach my $dst (split(/\s+/, $hosts)) {
+            $all{"dst:$dst"} = 1;
+            $all{"day:$day dst:$dst"}++;
+        }
+    }
+}
+
+###############################
+#### selections per system ####
+###############################
+@row = ();
+push(@row, {title => "system\n" . "-" x 6, align_title => 'center'});
+foreach my $day (sort(map {s/day://; $_} grep(/^day:\S+$/, keys(%all)))) {
+    push(@row, \' | ');
+    push(@row, {title => "$day\n" . "-" x length($day),
+        align_title => 'center'});
+}
+push(@row, \' | ');
+push(@row, {title => "all\n" . "-" x 3, align_title => 'center'});
+$t = Text::Table->new(@row);
+foreach my $dst (sort(map {s/dst://; $_} grep(/^dst:\S+$/, keys(%all)))) {
+    @row = ($dst);
+    my $total;
+    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+        my $dsts;
+        $dsts += $all{$_} foreach (grep(/$day dst:$dst/, keys(%all)));
+        push(@row, defined $dsts ? $dsts : "");
+        $total += $dsts;
+    }
+    push(@row, defined $total ? $total : "");
+    $t->add(@row);
+}
+
+@row = ("\nall (" . scalar(grep(/^dst:\S+$/, keys(%all))). ")");
+my $total;
+foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+    my $dsts;
+    $dsts += $all{$_} foreach (grep(/$day dst:/, keys(%all)));
+    push(@row, defined $dsts ? "\n$dsts" : "\n");
+    $total += $dsts;
+}
+push(@row, defined $total ? "\n$total" : "\n");
+$t->add(@row);
+print "Selections per System\n\n$t\n\n";
+
+########################
+#### calls per user ####
+########################
+@row = ();
+push(@row, {title => "user\n" . "-" x 4, align_title => 'center'});
+foreach my $day (sort(map {s/day://; $_} grep(/^day:\S+$/, keys(%all)))) {
+    push(@row, \' | ');
+    push(@row, {title => "$day\n" . "-" x length($day),
+        align_title => 'center'});
+}
+push(@row, \' | ');
+push(@row, {title => "all\n" . "-" x 3, align_title => 'center'});
+$t = Text::Table->new(@row);
+foreach my $user (sort(map
+        {s/uid://; my $u = getpwuid($_); $_ = defined $u ? $u : $_}
+        grep(/^uid:\S+$/, keys(%all)))) {
+    my $uid = getpwnam($user);
+    $uid = $user if (!defined $uid);
+    @row = ($user);
+    my $total;
+    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+        my $calls;
+        $calls += $all{$_} foreach (grep(/$day uid:$uid/, keys(%all)));
+        push(@row, defined $calls ? $calls : "");
+        $total += $calls;
+    }
+    push(@row, defined $total ? $total : "");
+    $t->add(@row);
+}
+
+@row = ("\nall (" . scalar(grep(/^uid:\S+$/, keys(%all))). ")");
+foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+    my $calls;
+    $calls += $all{$_} foreach (grep(/$day uid:/, keys(%all)));
+    push(@row, defined $calls ? "\n$calls" : "\n");
+}
+my $calls;
+$calls += $all{$_} foreach (grep(/^uid:/, keys(%all)));
+push(@row, defined $calls ? "\n$calls" : "\n");
+$t->add(@row);
+print "Calls per User\n\n$t\n\n";
+
+##########################
+#### calls per source ####
+##########################
+@row = ();
+push(@row, {title => "source\n" . "-" x 6, align_title => 'center'});
+foreach my $day (sort(map {s/day://; $_} grep(/^day:\S+$/, keys(%all)))) {
+    push(@row, \' | ');
+    push(@row, {title => "$day\n" . "-" x length($day),
+        align_title => 'center'});
+}
+push(@row, \' | ');
+push(@row, {title => "all\n" . "-" x 3, align_title => 'center'});
+$t = Text::Table->new(@row);
+foreach my $src (sort(map {s/src://; $_} grep(/^src:\S+$/, keys(%all)))) {
+    @row = ($src);
+    my $total;
+    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+        my $calls;
+        $calls += $all{$_} foreach (grep(/$day src:$src/, keys(%all)));
+        push(@row, defined $calls ? $calls : "");
+        $total += $calls;
+    }
+    push(@row, defined $total ? $total : "");
+    $t->add(@row);
+}
+
+@row = ("\nall (" . scalar(grep(/^src:\S+$/, keys(%all))). ")");
+my $total;
+foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+    my $calls;
+    $calls += $all{$_} foreach (grep(/$day uid:/, keys(%all)));
+    push(@row, defined $calls ? "\n$calls" : "\n");
+    $total += $calls;
+}
+push(@row, defined $total ? "\n$total" : "\n");
+$t->add(@row);
+print "Calls per Source\n\n$t\n\n";
+

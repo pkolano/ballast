@@ -1,0 +1,401 @@
+Ballast Installation and Configuration
+======================================
+
+1. Deployments
+
+    A Ballast deployment consists of:
+    
+        o A Ballast agent on each host to be load balanced to collect
+          load information
+          
+        o A Ballast server on one or more hosts to process load
+          information and select hosts for clients based on configured
+          policies
+        
+        o A Ballast client on each host that will invoke the balancer to
+          request balancing decisions from the server
+
+    Any number of load balancing aliases can be defined for any number
+    of hosts.  For example, an alias "foo" might be used to invoke the
+    load balancer across hosts {foo1,foo2,bar1,bar2}.  Namely, when the
+    user invokes "ssh foo", Ballast will dynamically select one of
+    {foo1,foo2,bar1,bar2} according to the configured load balancing
+    policy for alias foo and connect to that system (e.g. foo2) as if
+    the user had directly invoked "ssh foo2".
+
+
+2. Prerequisites
+
+    2.1. Host keys
+
+        All SSH host keys across the balanced systems for a particular
+        alias must be identical.  Otherwise, internal SSH host key
+        checks will fail when the stored known host key for the alias
+        does not match the host key offered by the selected host.  See
+        "man sshd" and "man sshd_config" for details on configuring
+        host keys.
+
+        If multiple balancing aliases are defined, the host keys may
+        differ between the hosts of different aliases.
+
+    2.2. Ballast agent
+
+        o Perl >= 5.8 and non-standard modules:
+            o Crypt::CBC (if encryption enabled)
+            o Crypt::X   (if encryption enabled for desired cipher X)
+
+    2.3. Ballast client
+
+        2.3.1. Perl client
+
+            o Perl >= 5.6
+
+        2.3.2. C client
+
+            o C      (compilation only)
+            o Make   (compilation only)
+            o Netcat (or equivalent such as tcpconnect from tcputils)
+
+    2.4. Ballast server
+
+        o Perl >= 5.8 and non-standard modules:
+            o Crypt::CBC (if encryption enabled)
+            o Crypt::X   (if encryption enabled for desired cipher X)
+            o IO::Multiplex
+            o Net::Server
+
+    2.5. Ballast log stats (optional)
+
+        o Perl >= 5.6 and non-standard modules:
+            o Date::Parse
+            o Text::Table
+
+
+3. Installation
+
+    Note that /usr/local/bin is used as the default install location in
+    all examples, but can be changed to any other desired location.  The
+    location of the config file can also be changed from /etc/ballastrc,
+    but then requires that the agent, client, and/or server be invoked
+    with additional parameters "-c /path/to/config/file".
+
+    3.1. Ballast agent installation
+
+        On each host to be load balanced:
+
+            install -m 755 perl/ballast-agent /usr/local/bin
+            install -m 644 etc/ballastrc /etc
+
+    3.2. Ballast client installation
+
+        The Ballast client comes in two flavors: Perl and C.  If Perl is
+        installed and available to users, the Perl version is
+        recommended.  The C version is intended for systems that either
+        don't have Perl installed or for which it is not generally
+        accessible to users (e.g. bastion hosts with a restricted
+        chroot environment).
+
+        3.2.1. Perl client
+
+            On each host that will invoke the balancer:
+
+                install -m 755 perl/ballast /usr/local/bin
+                install -m 644 etc/ballastrc /etc
+
+        3.2.2. C client
+
+            The C client must be compiled:
+
+                make
+
+            The Makefile assumes gcc and may need to be modified if an
+            alternate compiler is installed.
+
+            On each host that will invoke the balancer:
+
+                install -m 755 c/ballast /usr/local/bin
+                install -m 644 etc/ballastrc /etc
+
+    3.3. Ballast server installation
+
+        On one or more hosts:
+
+            install -m 755 perl/ballastd /usr/local/bin
+            install -m 644 etc/ballastrc /etc
+
+        Two optional server-related utilities can also be installed:
+
+            install -m 755 perl/ballast-dumpdb /usr/local/bin
+            install -m 755 perl/ballast-logstats /usr/local/bin
+
+
+4. Configuration
+
+    Note that the following will assume that all Ballast components were
+    installed in /usr/local/bin with the config file installed as
+    /etc/ballastrc.  If installed elsewhere, paths must be changed.
+
+    4.1. Ballast agent configuration
+
+        4.1.1. /etc/ballastrc
+
+            Any items listed under the agent sections in the default
+            config file should be reviewed.  Any uncommented items in
+            these sections must be configured (uncommented items in
+            other sections can be ignored or commented out if they are
+            not being used by another Ballast component).  For the
+            agent, these include:
+
+                data_alias
+                data_host
+
+            Note that the value of data_alias must match one of the
+            aliases X in a "policy_X" of the server configuration.
+            For example, for an alias "foo" defined by the server
+            config value "policy_foo", the agent config would set
+            data_alias to "foo".
+
+            It is strongly recommended that encrypted communication be
+            enabled between agents and the server.  Otherwise, the
+            integrity and privacy of load data cannot be guaranteed.
+            Encryption is enabled using the following two settings:
+
+                data_cipher
+                key_file
+
+            The Perl Crypt::CBC module must be installed on all agent
+            hosts as well as the module Crypt::X for the desired
+            cipher X.  For example, to use standard AES encryption,
+            install Crypt::Rijndael and set data_cipher to Rijndael.
+
+            Custom load information can be processed by the server
+            using the following setting:
+
+                load_hook
+
+            The value for this item is the path to any executable
+            program.  The program should print whitespace-separted
+            key-value pairs to stdout, where the key is an alphanumeric
+            value (equivalent to Perl regex "\w+") and the value is any
+            text (including spaces).  For example, the following script
+            (if saved to a file given as the value of load_hook) would
+            add a custom field "tmp_files" that contains the number of
+            top-level items in /tmp, which can be used in balancing
+            policies:
+
+                #!/bin/sh
+                echo tmp_files `ls -1 /tmp |wc -l`
+
+            Default load information collected by the agent can be
+            overridden using this mechanism, if desired.
+
+            To specify differential loads (i.e. load values where the
+            difference between consecutive values indicates the load
+            rather than a single value), a "d_" prefix should be added
+            to the key name.  For example, to specify the number of
+            top-level items in /tmp that have been added since the last
+            update, use:
+
+                #!/bin/sh
+                echo d_tmp_files `ls -1 /tmp |wc -l`
+
+            Note that this is exactly the same as the previous example
+            except for the "d_" prefix, which triggers special
+            processing in the server.  The original name "tmp_files"
+            should still be used in policies.
+
+            Take care with differential values that may become smaller
+            between two iterations (such as the above example).  Ballast
+            considers a host to be down if the balancing policy
+            evaluates to a negative number.  Use the absolute value
+            function "abs()" or the conditional evaluation operator
+            "?:" in policies when custom values may become negative.
+            
+        4.1.2. /var/spool/cron/crontabs/agent_user (or equivalent)
+
+            The agent does not require any special privileges to run so
+            may be invoked in the crontab of any user.  The crontab will
+            determine how often load data is collected.  The load
+            generated by the agent is minimal so can be run every
+            minute without impact.
+
+                # collect load information every minute
+                * * * * * /usr/local/bin/ballast-agent >/dev/null 2>&1
+
+            Note that the agent runs with Perl taint mode enabled so if
+            encrypted communication is enabled and the Crypt::* modules
+            are installed in a non-standard location (i.e. not listed in
+            @INC by "perl -V"), then the agent must be invoked using:
+
+                perl -T -I/module/location /usr/local/bin/ballast-agent
+
+    4.2. Ballast client configuration
+
+        4.2.1. /etc/ballastrc
+
+            Any items listed under the client sections in the default
+            config file should be reviewed.  Any uncommented items in
+            these sections must be configured (uncommented items in
+            other sections can be ignored or commented out if they are
+            not being used by another Ballast component).  For the
+            client, these include:
+
+                alias_domain
+                data_host
+                hosts_X (for each balancing alias X)
+
+            Note that the hosts listed in each "hosts_X" item can be any
+            subset of the actual hosts for alias X.  This value is only
+            used for resiliency when the Ballast server cannot be
+            contacted.  It does not need to be changed when additional
+            balanced hosts are added.  Any balanced host that no longer
+            exists should be removed from this setting or else may
+            result in errors if the server goes down.
+
+            The C client also requires:
+
+                relay_path
+
+            which is the path to a TCP relay such as netcat.  The Perl
+            client has relay funtionality built-in, although it should
+            be considered beta and can be replaced with an external
+            utility using a relay_path setting.
+
+        4.2.2. /etc/ssh/ssh_config
+
+            To invoke the load balancer, each client system must have
+            an entry for each balancing alias.  The following uses alias
+            "foo" as an example.
+
+                # Aliases for least loaded and last utilized system
+                Host foo foo-last foo.example.com foo-last.example.com
+
+                    # Use the balancer when connecting to these aliases
+                    ProxyCommand /usr/local/bin/ballast %h
+
+                    # Avoids minor error messages (optional)
+                    HostbasedAuthentication no
+
+                    # Avoids host key checks for all variants when
+                    # StrictHostKeyChecking is enabled (optional)
+                    HostKeyAlias foo1.example.com
+
+            Note that "example.com" must match the value of "alias_domain",
+            "-last" must match the value of "alias_last" (if modified from
+            the default), "foo" must match X in item "hosts_X", and "foo1"
+            should match one of the values of "hosts_foo" in the config
+            file.
+
+        4.2.3. ~/.ssh/config
+
+            To invoke the load balancer from an external system through
+            a bastion host, users can add the following to their
+            personal ~/.ssh/config:
+
+                # Aliases for least loaded and last utilized system
+                Host foo foo-last foo.example.com foo-last.example.com
+
+                    # Use the balancer on the bastion for these aliases
+                    ProxyCommand ssh bastion.example.com /usr/local/bin/ballast %h
+
+                    # Avoids minor error messages (optional)
+                    HostbasedAuthentication no
+
+                    # Avoids host key checks for all variants when
+                    # StrictHostKeyChecking is enabled (optional)
+                    HostKeyAlias foo1.example.com
+
+            Note that the Ballast client can be used as a
+            general-purpose replacement for netcat on external systems
+            even for systems that do not correspond to balancing
+            aliases.
+
+    4.3. Ballast server configuration
+
+        4.3.1. /etc/ballastrc
+
+            Any items listed under the server sections in the default
+            config file should be reviewed.  Any uncommented items in
+            these sections must be configured (uncommented items in
+            other sections can be ignored or commented out if they are
+            not being used by another Ballast component).  For the
+            server, these include:
+
+                data_db
+                policy_X (for each balancing alias X)
+
+            Consult "doc/policy.txt" for full documentation on
+            specifying balancing policies.
+
+            Make sure that the user and/or group specified with the
+            "run_user" and "run_group" settings have write access to the
+            pid_file and data_db settings, if specified.
+
+            It is strongly recommended that encrypted communication be
+            enabled between agents and the server.  Otherwise, the
+            integrity and privacy of load data cannot be guaranteed.
+            Encryption is enabled using the following two settings:
+
+                data_cipher
+                key_file
+
+            The Perl Crypt::CBC module must be installed on all server
+            hosts as well as the module Crypt::X for the desired cipher
+            X.  For example, to use standard AES encryption, install
+            Crypt::Rijndael and set data_cipher to Rijndael.
+
+        4.3.2. /etc/init.d/ballastd (or equivalent)
+
+            To invoke the server at boot time, an appropriate
+            /etc/init.d script and /etc/rc*.d links must be created.
+            The server can simply be invoked as:
+
+                /usr/local/bin/ballastd
+
+            Server behavior such as logging, invoking user and group,
+            and the pid file can be configured in the /etc/ballastrc
+            file.
+
+            Note that the server runs with Perl taint mode enabled so if
+            encrypted communication is enabled and the Crypt::* modules
+            are installed in a non-standard location (i.e. not listed in
+            @INC by "perl -V"), then the server must be invoked using:
+
+                perl -T -I/module/location /usr/local/bin/ballastd
+
+        4.3.3. /var/spool/cron/crontabs/root (or equivalent)
+
+            A root crontab may optionally be defined to collect stats on
+            a periodic basis.  The ballast-logstats command takes a
+            syslog stream on stdin and produces a set of result tables
+            on stdout.
+
+                # Collect daily Ballast usage stats at 8am and save in /dir
+                #   (assumes syslog of previous day in /var/log/syslog.0)
+                0 8 * * * /usr/local/bin/ballast-logstats </var/log/syslog.0 \
+                    >/dir/ballast.`/bin/date +%m.%d.%y`
+
+            Depending on the Ballast and system logging configuration
+            (i.e. where the log files go and how accessible they are),
+            it may be possible to run this as a non-root user.
+
+
+5. Activation
+
+    Once Ballast has been configured, the server must be started.
+    This is typically achieved through the corresponding "/etc/init.d"
+    script:
+
+        /etc/init.d/ballastd start
+
+    Or it can be invoked directly:
+
+        /usr/local/bin/ballastd
+
+    with the same caveat as mentioned in Section 4.3.2.
+
+    The server configuration can be reloaded on-the-fly by sending the
+    HUP signal to the ballastd process.  Note that the data_port setting
+    cannot be modified in this manner and will crash the server if
+    attempted.  Stop and restart to change this value.
+
