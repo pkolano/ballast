@@ -9,7 +9,8 @@ down.  If more than one host has the lowest value, one will be chosen at
 random.
 
 Policy expressions are composed of terms corresponding to various load
-metrics, special functions, and a subset of perl operators.
+metrics, special functions, and a subset of perl operators.  Long lines
+may be broken with the line continuation operator ("\").
 
 1. Operators
 
@@ -17,9 +18,9 @@ metrics, special functions, and a subset of perl operators.
     perlop" for detailed descriptions.  Precedence can be forced in the
     usual manner with parentheses.
 
-    1.1. Arithmetic Operators
+    1.1. Arithmetic and String Operators
 
-        ! ~ * / % + - << >> & | ^ ** abs()
+        ! ~ * / % + - << >> & | ^ ** abs() .
 
     1.2. Arithmetic Relational Operators
 
@@ -49,6 +50,7 @@ metrics, special functions, and a subset of perl operators.
             other dividers supported by perl (e.g. not q|this is a
             string|)
 
+
 2. Functions
 
     Two special functions can be used to compute values across all
@@ -75,6 +77,12 @@ metrics, special functions, and a subset of perl operators.
     3.1. System Terms
 
         3.1.1. Miscellaneous
+
+            arg0, arg1, ... argN
+
+                nth extra argument given to client by user (counting
+                begins at first argument after alias name as in
+                "ballast alias_name arg0 arg1 ... argN).
 
             boot_time
 
@@ -656,8 +664,8 @@ metrics, special functions, and a subset of perl operators.
 4. Conditional Policies
 
     The flexibility of Ballast policy expressions allows very advanced
-    balancing policies to be specified.  A few example uses are
-    illustrated below.
+    balancing policies to be specified.  A few example uses that may be
+    combined arbitrarily are illustrated below.
 
     4.1. Client-Specific Balancing
 
@@ -702,17 +710,47 @@ metrics, special functions, and a subset of perl operators.
         hosts while trial/normal users can only go to a certain subset.
         Additional user-specific policies are shown in the next section.
 
+    4.4. User-Directed Balancing
+
+        Balancing decisions can be influenced by the user (or by a
+        program acting on the user's behalf) using additional arguments
+        given on the command line.  The basic form of a user-directed
+        expression is:
+
+            arg0 eq q(name) ? expr1 : expr2
+
+        In this case, if the first additional matches a predetermined
+        name, expr1 will be used for balancing.  Otherwise, expr2 will
+        be used.  As an example, suppose users wish to choose the
+        balancing policy most relevant to each invocation.  In this
+        case, an argument of "cpu" could be configured to balance by
+        lowest cpu load, "mem" could be configured to balance by lowest
+        memory load, etc.
+
+    4.5. Host-Subset Balancing
+
+        Balancing decisions can be made between a specific subset of
+        hosts using additional arguments given on the command line.
+        The basic form of a host-subset expression is:
+
+            arg0 =~ (qr(^|,) . host . qr(,|$)) ? expr1 : -1
+
+        In this case, if the first additional argument is a set of
+        hosts separated by commas, any hosts contained in that set will
+        be balanced by expr1 while all other hosts will be marked as
+        unavailable with -1.  As an example, suppose another application
+        derives a set of hosts that have a particular property that is
+        beyond the scope of the balancer.  In this case, that
+        application can invoke the balancer internally with that set of
+        hosts to ensure that the host utilized will be available and
+        have the lowest load.
+
 
 5. Sample Policies
 
     The following sample policies corresponding to the policies
     described in the paper "doc/ballast.pdf".  Policies 5.4 to 5.8
-    assume CPU load as the least load metric.  Note that policies must
-    be specified on a single line but are shown on multiple lines to
-    increase readability.  Also note that these policies must be
-    specified on a configuration line "policy_X sample_policy" for a
-    balancing alias X, where "sample_policy" would become the text
-    shown.
+    assume CPU load as the least load metric.
 
     5.1. Random
 
@@ -741,53 +779,55 @@ metrics, special functions, and a subset of perl operators.
 
     5.7. Predictive Average Overlap
 
-        cpu + sum(user_i_cpu *
+        cpu + sum(user_i_cpu * \
             (user_i_time > user_time ? 1 : (user_i_time / user_time)))
 
     5.8. Predictive Overlap
 
-        cpu + sum(user_i_cpu *
-            (session_i_time > user_i_time ? 0 :
+        cpu + sum(user_i_cpu *                  \
+            (session_i_time > user_i_time ? 0 : \
                 (user_i_time - session_i_time) / user_time))
 
     5.9. Dynamic Least Load
 
-        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?
-            cpu * mem :
-            (user_mem_rank / users >= .75 ?
-                mem :
+        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \
+            cpu * mem :                                                \
+            (user_mem_rank / users >= .75 ?                            \
+                mem :                                                  \
                 cpu)
 
-    5.9. Dynamic Predictive Least Load
+    5.10. Dynamic Predictive Least Load
 
-        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?
-            cpu * mem + sum(user_i_cpu * user_i_mem) :
-            (user_mem_rank / users >= .75 ?
-                mem + sum(user_i_mem) :
+        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \
+            cpu * mem + sum(user_i_cpu * user_i_mem) :                 \
+            (user_mem_rank / users >= .75 ?                            \
+                mem + sum(user_i_mem) :                                \
                 cpu + sum(user_i_cpu))
 
-    5.10. Dynamic Predictive Average Overlap
+    5.11. Dynamic Predictive Average Overlap
 
-        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?
-            cpu * mem + sum(user_i_cpu * user_i_mem *
-                (user_i_time > user_time ? 1 : (user_i_time / user_time))) :
-            (user_mem_rank / users >= .75 ?
-                mem + sum(user_i_mem *
-                    (user_i_time > user_time ? 1 : (user_i_time / user_time))) :
-                cpu + sum(user_i_cpu *
-                    (user_i_time > user_time ? 1 : (user_i_time / user_time))))
+        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?       \
+            cpu * mem + sum(user_i_cpu * user_i_mem *                        \
+                (user_i_time > user_time ? 1 : (user_i_time / user_time))) : \
+            (user_mem_rank / users >= .75 ?                                  \
+                mem + sum(user_i_mem *                                       \
+                    (user_i_time > user_time ? 1 :                           \
+                        (user_i_time / user_time))) :                        \
+                cpu + sum(user_i_cpu *                                       \
+                    (user_i_time > user_time ? 1 :                           \
+                        (user_i_time / user_time))))
 
-    5.11. Dynamic Predictive Overlap
+    5.12. Dynamic Predictive Overlap
 
-        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?
-            cpu * mem + sum(user_i_cpu * user_i_mem *
-                (session_i_time > user_i_time ? 0 :
-                    (user_i_time - session_i_time) / user_time)) :
-            (user_mem_rank / users >= .75 ?
-                mem + sum(user_i_mem *
-                    (session_i_time > user_i_time ? 0 :
-                        (user_i_time - session_i_time) / user_time)) :
-                cpu + sum(user_i_cpu *
-                    (session_i_time > user_i_time ? 0 :
+        user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \
+            cpu * mem + sum(user_i_cpu * user_i_mem *                  \
+                (session_i_time > user_i_time ? 0 :                    \
+                    (user_i_time - session_i_time) / user_time)) :     \
+            (user_mem_rank / users >= .75 ?                            \
+                mem + sum(user_i_mem *                                 \
+                    (session_i_time > user_i_time ? 0 :                \
+                        (user_i_time - session_i_time) / user_time)) : \
+                cpu + sum(user_i_cpu *                                 \
+                    (session_i_time > user_i_time ? 0 :                \
                         (user_i_time - session_i_time) / user_time)))
 

@@ -52,6 +52,16 @@ Using Ballast
         solution beyond just SSH.  This functionality is also useful for
         testing purposes.
 
+        Additional arguments can be given to the Ballast client that
+        will correspond to arg0...argN in policy definitions.  For
+        example:
+
+            ballast -l foo bar baz
+
+        would print the host that has been selected for alias "foo" when
+        arg0 is set to "bar" and arg1 is set to "baz" in the
+        corresponding balancing policy.
+
 
 2. Ballast server
 

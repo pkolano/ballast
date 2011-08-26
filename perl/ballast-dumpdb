@@ -38,9 +38,10 @@
 use strict;
 use Fcntl;
 use Getopt::Long qw(:config bundling no_ignore_case require_order);
-use SDBM_File;
+use MLDBM qw(DB_File);
+use MLDBM::Sync;
 
-our $VERSION = 0.14;
+our $VERSION = 0.17;
 
 # default configuration
 my %conf = (
@@ -52,20 +53,28 @@ GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
 
 # parse configuration
 open(FILE, $conf{conf_file}) or die "Unable to load config file: $!\n";
+my $mline;
 while (my $line = <FILE>) {
+    # strip whitespace and comments
     $line =~ s/^\s+|\s+$|\s*#.*//g;
-    if ($line =~ /^(\S+)\s+(.*)/) {
+    next if (!$line);
+    # support line continuation operator
+    $mline .= $line;
+    next if ($mline =~ s/\s*\\$/ /);
+    if ($mline =~ /^(\S+)\s+(.*)/) {
         $conf{$1} = $2;
     }
+    $mline = undef;
 }
 close FILE;
 
 # tie persistent load database to hash
 my %load;
-tie(%load, 'SDBM_File', $conf{data_db}, O_RDONLY, 0600) or
+my $sync = tie(%load, 'MLDBM::Sync', $conf{data_db}, O_RDONLY, 0600) or
     die "Unable to tie load database: $!\n";
 
 # dump all keys
+$sync->ReadLock;
 foreach my $key (sort(keys(%load))) {
     if ($ARGV[0]) {
         # dump only values matched by regex
@@ -73,6 +82,5 @@ foreach my $key (sort(keys(%load))) {
     }
     print "$key = $load{$key}\n";
 }
-
-untie %load;
+$sync->UnLock;
 

@@ -45,7 +45,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define VERSION "1.4"
+#define VERSION "1.7"
 
 #ifndef CONF_FILE
 #define CONF_FILE "/etc/ballastrc"
@@ -69,7 +69,7 @@ char **conf = NULL;
 int nconf = 0;
 
 // calling environment for timeouts
-jmp_buf env;
+sigjmp_buf env;
 
 // trim and store config setting in string
 void putconf(char *string) {
@@ -112,8 +112,8 @@ int igetconf(char *key) {
     return strtol(val, NULL, 0);
 }
 
-// send data to host/port in ainfo and return response in data
-int getdata(char *data, struct addrinfo *ainfo) {
+// send sdata to host/port in ainfo and return response in data
+int getdata(const char *sdata, char *data, struct addrinfo *ainfo) {
     if (ainfo == NULL) return -1;
 
     // create socket
@@ -125,7 +125,7 @@ int getdata(char *data, struct addrinfo *ainfo) {
     freeaddrinfo(ainfo);
 
     // send request
-    int n = write(sock, data, strlen(data));
+    int n = write(sock, sdata, strlen(sdata));
     if (n < 0) return -1;
 
     // read reply
@@ -153,13 +153,15 @@ struct addrinfo *resolve(char *data_host) {
 
 // alarm handler that jumps back to calling environment with invoking signal
 void timeout(int sig) {
-    longjmp(env, sig);
+    siglongjmp(env, sig);
 }
 
 int main(int argc, char *argv[]) {
     int opt;
     int opt_list = 0;
     char *conf_file = CONF_FILE;
+
+    // parse arguments
     while ((opt = getopt(argc, argv, "c:l")) != -1) {
         switch (opt) {
             case 'c':
@@ -172,9 +174,6 @@ int main(int argc, char *argv[]) {
     }
     if (optind >= argc) {
         fprintf(stderr, "ERROR: no hostname given\n");
-        exit(1);
-    } else if (argc - optind > 1) {
-        fprintf(stderr, "ERROR: too many arguments\n");
         exit(1);
     }
 
@@ -238,16 +237,28 @@ int main(int argc, char *argv[]) {
 
     if (defaults != NULL) {
         // given host matches defined alias, so load balance
-        // retrieve least loaded hosts from data server or time out
-        snprintf(data, DATA_SIZE, "%s%s %d\n", arg, 
+        // construct balancing request
+        char sdata[DATA_SIZE];
+        snprintf(sdata, DATA_SIZE, "%s%s %d", arg, 
             last ? getconf("alias_last") : "", getuid());
+        // concatenate optional arguments to request
+        for (int i = optind + 1; i < argc; i++) {
+            if (strlen(argv[i]) + 2 > DATA_SIZE - strlen(sdata)) {
+                fprintf(stderr, "ERROR: excessive argument length\n");
+                exit(1);
+            }
+            strncat(sdata, argv[i], DATA_SIZE - strlen(sdata) - 2);
+        }
+        strcat(sdata, "\n");
+
+        // retrieve least loaded hosts from data server or time out
         signal(SIGALRM, timeout);
         char *host = strdup(getconf("data_host"));
         for (host = strtok(host, " "); host; host = strtok(NULL, " ")) {
             // resolve host name outside alarm to avoid reentrancy issues
             struct addrinfo *ainfo = resolve(host);
             alarm(igetconf("data_timeout"));
-            if (setjmp(env) != SIGALRM && !getdata(data, ainfo)) break;
+            if (sigsetjmp(env, 1) != SIGALRM && !getdata(sdata, data, ainfo)) break;
             // loop to try alternate data servers on failure
             alarm(0);
         }
@@ -263,17 +274,19 @@ int main(int argc, char *argv[]) {
                 arg, getconf("alias_text"));
             exit(1);
         }
+
         // count number of hosts in data
         host = data;
         long n = 1;
         while ((host = strchr(host + 1, ' ')) != NULL) n++;
+
         // pick random host from data
         srand(time(NULL));
         n = rand() % n;
         for (host = strtok(data, " "); n-- > 0; host = strtok(NULL, " "));
         if (opt_list) {
             // print chosen host
-            printf("%s%s\n", host, getconf("alias_domain"));
+            printf("%s\n", host);
             exit(0);
         } else {
             // connect to chosen host
@@ -282,6 +295,7 @@ int main(int argc, char *argv[]) {
             // does not return
         }
     }
+
     // given host does not match alias, so pass through untouched
     if (opt_list) {
         // print given host

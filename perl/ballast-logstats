@@ -41,7 +41,7 @@ use Getopt::Long qw(:config bundling no_ignore_case require_order);
 use Socket;
 use Text::Table;
 
-our $VERSION = 0.15;
+our $VERSION = 0.17;
 
 # default configuration
 my %conf = (
@@ -54,11 +54,18 @@ GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
 
 # parse configuration
 if (open(FILE, $conf{conf_file})) {
+    my $mline;
     while (my $line = <FILE>) {
+        # strip whitespace and comments
         $line =~ s/^\s+|\s+$|\s*#.*//g;
-        if ($line =~ /^(\S+)\s+(.*)/) {
+        next if (!$line);
+        # support line continuation operator
+        $mline .= $line;
+        next if ($mline =~ s/\s*\\$/ /);
+        if ($mline =~ /^(\S+)\s+(.*)/) {
             $conf{$1} = $2;
         }
+        $mline = undef;
     }
     close FILE;
 }
@@ -70,7 +77,7 @@ my $now = time;
 my $week = 60 * 60 * 24 * 7;
 
 while (<STDIN>) {
-    if (/(.*)\s+\S+\s+$conf{syslog_ident}.*\s+(\w+)\/(\d+)\s+returns\s+"([^"]*)"\s+to\s+(\S+)/) {
+    if (/(.*)\s+\S+\s+$conf{syslog_ident}.*\s+([-\w]+)\/(\d+)\s+returns\s+"([^"]*)"\s+to\s+(\S+)/) {
         my ($time, $alias, $uid, $hosts, $src) = ($1, $2, $3, $4, $5);
         my $secs = str2time($time);
         next if ($now - $secs > $week);

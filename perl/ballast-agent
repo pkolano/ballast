@@ -39,15 +39,18 @@ use strict;
 use Getopt::Long qw(:config bundling no_ignore_case require_order);
 use IO::Socket;
 use MIME::Base64;
+use POSIX qw(setgid setuid);
 use Storable qw(nfreeze);
 use Sys::Hostname;
 
-our $VERSION = 0.14;
+our $VERSION = 0.17;
 
 my %conf = (
     conf_file => "/etc/ballastrc",
     data_port => 4411,
+    data_timeout => 2,
     key_file => "/etc/ballast.key",
+    random_wait => 0,
     user_load => 1,
 );
 
@@ -56,11 +59,18 @@ GetOptions(\%conf, "conf_file|c=s") or die "Invalid options\n";
 
 # parse configuration
 open(FILE, $conf{conf_file}) or die "Unable to load config file: $!\n";
+my $mline;
 while (my $line = <FILE>) {
+    # strip whitespace and comments
     $line =~ s/^\s+|\s+$|\s*#.*//g;
-    if ($line =~ /^(\S+)\s+(.*)/) {
+    next if (!$line);
+    # support line continuation operator
+    $mline .= $line;
+    next if ($mline =~ s/\s*\\$/ /);
+    if ($mline =~ /^(\S+)\s+(.*)/) {
         $conf{$1} = $2;
     }
+    $mline = undef;
 }
 close FILE;
 die "Data alias not defined\n" if (!$conf{data_alias});
@@ -81,10 +91,28 @@ if ($conf{data_cipher}) {
     );
 }
 
+# change group and/or user if specified
+if ($conf{run_group}) {
+    my $gid = getgrnam($conf{run_group});
+    setgid($gid) if (defined $gid);
+    die "Unable to change run group\n"
+        if (!defined $gid || $( != $gid || $) != $gid);
+}
+if ($conf{run_user}) {
+    my $uid = getpwnam($conf{run_user});
+    setuid($uid) if (defined $uid);
+    die "Unable to change run user\n"
+        if (!defined $uid || $< != $uid || $> != $uid);
+}
+
+# sleep random amount of time
+if ($conf{random_wait} > 0) {
+    sleep int(rand($conf{random_wait}));
+}
+
 my %load;
 $load{alias} = $conf{data_alias};
-$load{host} = hostname;
-$load{host} =~ s/\..*//;
+$load{host} = (gethostbyname(hostname))[0];
 $load{time} = time;
 
 # collect i/o load
@@ -255,16 +283,23 @@ if ($conf{data_cipher}) {
 
 # send data to each server specified
 foreach my $host (split(/\s+/, $conf{data_host})) {
-    my $sock = IO::Socket::INET->new(
-        Proto    => 'tcp',
-        PeerAddr => $host,
-        PeerPort => $conf{data_port},
-    );
-    if (!$sock) {
-        print STDERR "Unable to contact server $host\n";
-    } else {
-        print $sock "#$data\n";
-        close $sock;
-    }
+    eval {
+        local $SIG{ALRM} = sub {die "alarm\n"};
+        alarm $conf{data_timeout};
+        my $sock = IO::Socket::INET->new(
+            Proto    => 'tcp',
+            PeerAddr => $host,
+            PeerPort => $conf{data_port},
+        );
+        if ($sock) {
+            print $sock "#$data\n";
+            close $sock;
+        } else {
+            print STDERR "Unable to contact server $host\n";
+        }
+    };
+    print STDERR "Timed out communicating with server $host\n"
+        if ($@ eq "alarm\n");
 }
+alarm 0;
 

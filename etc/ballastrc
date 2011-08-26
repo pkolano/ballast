@@ -37,6 +37,11 @@
 # host name(s) and/or IP address(es) of Ballast server(s)
 data_host myserver1 myserver2
 
+# amount of time to wait during server communication
+#   (if multiple data servers are defined, will wait this amount for each)
+#   (client will use default host set if all servers time out)
+#data_timeout 2
+
 
 ########################
 #### Ballast client ####
@@ -66,6 +71,12 @@ data_host myserver1 myserver2
 #   (example: key_file /etc/ballast.key)
 #key_file nodefault
 
+# group that agent/server will run as
+run_group nogroup
+
+# user that agent/server will run as
+run_user nobody
+
 
 ########################
 #### Ballast agent  ####
@@ -75,8 +86,11 @@ data_host myserver1 myserver2
 data_alias foo
 
 # location of executable called to generate custom load data
-#   (example: load_hook /usr/local/bin/myload
+#   (example: load_hook /usr/local/bin/myload)
 #load_hook nodefault
+
+# number of seconds to randomly wait before collecting data
+#random_wait 0
 
 # collect user specific information
 #user_load 1
@@ -100,10 +114,6 @@ alias_domain .example.com
 hosts_foo foo1 foo2 foo3
 hosts_bar bar1 bar2
 
-# amount of time to wait for server before default host set used
-#   (if multiple data servers are defined, will wait this amount for each)
-#data_timeout 2
-
 # path to tcp relay
 #   (perl client has beta relay feature built-in so this can be commented out)
 #   (c client requires external program such as netcat or tcpconnect)
@@ -117,30 +127,20 @@ relay_path /usr/bin/netcat
 #### Ballast server ####
 ########################
 
-# time in seconds to wait for agent data before host considered down
-#host_timeout 180
-
-# fields for which running averages will be kept for each user
-#   (do not modify this unless you know what you're doing)
-#user_sum cpu mem ram io_bytes io_ops io_reads io_read_bytes io_writes io_write_bytes
-
 # location of database
 #   (directory must exist, but file will be created)
 data_db /var/lib/ballast/ballast.db
 
-# regex to specify which ips are allowed to connect
-#   (recommended if data_port is externally accessible)
-#   (example: tcp_allow ^192\.168\.)
-#tcp_allow nodefault
+# use collected data of given alias(es) for load calculations
+#   (form is data_alias_X where X is the name of an alias)
+#   (for example, "data_alias_foo foo bar" would evaluate policies
+#     against data collected from any agents that have data_alias set
+#     to either "foo" or "bar")
+#data_alias_foo foo
+#data_alias_bar bar
 
-# regex to specify which ips are not allowed to connect
-#   (example: tcp_deny ^192\.168\.)
-#tcp_deny nodefault
-
-# policy expression to be evaluated across all hosts
-#   (form is policy_X where X is the name of an alias)
-policy_foo cpu * ram * io_sectors * net_bytes
-policy_bar load_5
+# time in seconds to wait for agent data before host considered down
+#host_timeout 180
 
 # location of log file or Sys::Syslog to log via syslog
 #log_file nodefault
@@ -152,14 +152,19 @@ policy_bar load_5
 # location of pid file
 #pid_file nodefault
 
-# group that server will run as
-#run_group nodefault
+# policy expression to be evaluated across all hosts
+#   (form is policy_X where X is the name of an alias)
+policy_foo cpu * ram * io_sectors * net_bytes
+policy_bar load_5
+
+# maximum number of child forks active at any given time
+#run_fork_max nodefault
+
+# minimum number of child forks active at any given time
+#run_fork_min nodefault
 
 # run server in background
 #run_setsid 1
-
-# user that server will run as
-#run_user nodefault
 
 # syslog facility when log_file is Sys::Syslog
 #syslog_facility syslog
@@ -169,4 +174,17 @@ policy_bar load_5
 
 # syslog log options when log_file is Sys::Syslog
 #syslog_logopt ndelay,pid
+
+# regex to specify which ips are allowed to connect
+#   (recommended if data_port is externally accessible)
+#   (example: tcp_allow 192\.168\..*)
+#tcp_allow nodefault
+
+# regex to specify which ips are not allowed to connect
+#   (example: tcp_deny 192\.168\..*)
+#tcp_deny nodefault
+
+# fields for which running averages will be kept for each user
+#   (do not modify this unless you know what you're doing)
+#user_sum cpu mem ram io_bytes io_ops io_reads io_read_bytes io_writes io_write_bytes
 

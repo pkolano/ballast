@@ -41,7 +41,7 @@ use IO::Select;
 use IO::Socket;
 use IO::Socket::INET;
 
-our $VERSION = 0.14;
+our $VERSION = 0.17;
 
 # default configuration
 my %conf = (
@@ -58,18 +58,23 @@ if (!GetOptions(\%conf, "conf_file|c=s", "l")) {
     die "ERROR: invalid options\n";
 } elsif (scalar(@ARGV) < 1) {
     die "ERROR: no hostname given\n";
-} elsif (scalar(@ARGV) > 1) {
-    die "ERROR: too many arguments\n";
 }
 
 # parse configuration
 open(FILE, $conf{conf_file}) or
     die "ERROR: config file $conf{conf_file} does not exist\n";
+my $mline;
 while (my $line = <FILE>) {
+    # strip whitespace and comments
     $line =~ s/^\s+|\s+$|\s*#.*//g;
-    if ($line =~ /^(\S+)\s+(.*)/) {
+    next if (!$line);
+    # support line continuation operator
+    $mline .= $line;
+    next if ($mline =~ s/\s*\\$/ /);
+    if ($mline =~ /^(\S+)\s+(.*)/) {
         $conf{$1} = $2;
     }
+    $mline = undef;
 }
 close FILE;
 die "ERROR: config parameter \"alias_domain\" is not defined\n"
@@ -78,7 +83,8 @@ die "ERROR: config parameter \"data_host\" is not defined\n"
     if (!$conf{data_host});
 
 # strip domain and last from given host
-my $alias = $ARGV[0];
+my $arg0 = shift;
+my $alias = $arg0;
 $alias =~ s/$conf{alias_domain}//;
 my $last = $alias =~ s/$conf{alias_last}$//;
 
@@ -94,19 +100,20 @@ if ($conf{"hosts_$alias"}) {
                     Proto => "tcp",
                     PeerAddr => $dhost,
                     PeerPort => $conf{data_port},
-                    Timeout => $conf{data_timeout},
                 );
                 if ($sock) {
                     print $sock $alias;
                     print $sock $conf{alias_last} if ($last);
-                    print $sock " $<\n";
+                    print $sock " $<";
+                    print $sock " " . join(" ", @ARGV) if (scalar(@ARGV) > 0);
+                    print $sock "\n";
                     $host = <$sock>;
                     chomp $host;
                     close $sock;
                 }
             };
             $host = undef if ($@ eq "alarm\n");
-            last if ($host);
+            last if (defined $host);
         }
         alarm 0;
     }
@@ -114,18 +121,16 @@ if ($conf{"hosts_$alias"}) {
     $host = $conf{"hosts_$alias"} if (!defined $host);
 
     die "ERROR: all hosts for alias $alias are $conf{alias_text}\n" if (!$host);
-        
+
     my @hosts = split(/\s+/, $host);
     my $rand = int(rand(scalar(@hosts)));
     $host = $hosts[$rand];
 } else {
-    $host = $ARGV[0];
+    $host = $arg0;
 }
 
 if ($conf{l}) {
-    print $host;
-    print $conf{alias_domain} if ($host ne $ARGV[0]);
-    print "\n";
+    print "$host\n";
 } elsif (defined $conf{relay_path}) {
     exec {$conf{relay_path}} ($conf{relay_path}, $host, $conf{relay_port});
 } else {

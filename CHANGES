@@ -17,4 +17,26 @@ CHANGES
         exit when conf file not available
     - Modified log file parsing in ballast-logstats to be more precise
     - Readded quotes to logging of selection at log level 2
+    - Fixed selection when multiple hosts evaluate to same min value
 
+* Ballast 1.6 (--/--/--)
+    - Internal release
+
+* Ballast 1.7 (08/26/11)
+    - Switched database from SDBM_File to DB_File for greatly enhanced
+        stability and performance (previous databases will be invalid)
+    - Added ability to use different server types based on min/max forks
+    - Fixed comments in ballastd
+    - Removed dist target from make file
+    - Added data alias setting to allow multiple aliases with same data
+    - Added random wait capability to agent
+    - Added ability to use line continuation operator (\) in config file
+    - Agent now tries to detect fully-qualified domain name of host
+    - Added ability to use extra client arguments in policies
+    - Updated documentation
+    - Fixed tcp_allow and tcp_deny examples in config skeleton
+    - Added ability to setuid/setgid agent
+    - Added timeout to agent
+    - Fixed hang during timeout with multiple data servers in C client
+    - Fixed overwrite of request with multiple data servers in C client
+    - Fixed backup server handling in perl client when all hosts unavailable
