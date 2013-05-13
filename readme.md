@@ -10,7 +10,7 @@ It includes a simple client, a lightweight server and a data collection agent.
 
 * Homepage: [people.nas.nasa.gov/~kolano/projects/ballast.html](http://people.nas.nasa.gov/~kolano/projects/ballast.html)
 * License: [NASA Open Source Agreement Version 1.3](https://en.wikipedia.org/wiki/NASA_Open_Source_Agreement)
-* Upstream: [sourceforge.net/projects/ballast]](http://sourceforge.net/projects/ballast/files/)
+* Upstream: [Ballast Sourceforge Project](http://sourceforge.net/projects/ballast/files/)
 
 ## Details
 
