@@ -19,11 +19,14 @@ It includes a simple client, a lightweight server and a data collection agent.
 * Usage details: [doc/usage.txt](doc/usage.txt)
 * Policy syntax: [doc/policy.txt](doc/policy.txt)
 
+## Diagram
+
+![architecture diagram](https://cloud.githubusercontent.com/assets/145113/12710216/364e8014-c869-11e5-9aaf-0999a6d05903.png)
+
+## Etc
+
 Questions, comments, fixes, and/or enhancements welcome.
 Contact [Paul Kolano](http://people.nas.nasa.gov/~kolano/).
 
-## Notes
-
 This is an unofficial repo. I just imported the [tarballs on sourceforge](http://sourceforge.net/projects/ballast/files/).
-
-~notpeter
+[~notpeter](https://github.com/notpeter/)
