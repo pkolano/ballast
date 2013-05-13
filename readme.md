@@ -28,5 +28,4 @@ It includes a simple client, a lightweight server and a data collection agent.
 Questions, comments, fixes, and/or enhancements welcome.
 Contact [Paul Kolano](http://people.nas.nasa.gov/~kolano/).
 
-This is an unofficial repo. I just imported the [tarballs on sourceforge](http://sourceforge.net/projects/ballast/files/).
-[~notpeter](https://github.com/notpeter/)
+This is an unofficial repo which tracks changes from the [offical ballast release tarballs](http://sourceforge.net/projects/ballast/files/).
