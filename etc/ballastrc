@@ -27,6 +27,11 @@
 # port used for server communication
 #data_port 4411
 
+# amount of time to wait during server communication
+#   (if multiple data servers are defined, will wait this amount for each)
+#   (client will use default host set if all servers time out)
+#data_timeout 2
+
 
 ########################
 #### Ballast agent  ####
@@ -36,11 +41,6 @@
 
 # host name(s) and/or IP address(es) of Ballast server(s)
 data_host myserver1 myserver2
-
-# amount of time to wait during server communication
-#   (if multiple data servers are defined, will wait this amount for each)
-#   (client will use default host set if all servers time out)
-#data_timeout 2
 
 
 ########################

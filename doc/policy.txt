@@ -694,7 +694,7 @@ may be broken with the line continuation operator ("\").
         while all other hosts are evaluated against expr2.  As an
         example, suppose a system is being used for testing and should
         only be available if all other hosts are down.  Its expression
-        can be set to a large value while others are balancing by the
+        can be set to a large value while others are balanced by the
         normal policy.
 
     4.3. User-Specific Balancing

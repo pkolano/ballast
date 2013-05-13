@@ -46,13 +46,14 @@ use MLDBM qw(DB_File);
 use MLDBM::Sync;
 use Storable qw(thaw);
 
-our $VERSION = 0.17;
+our $VERSION = 0.18;
 
 # default configuration
 my %conf = (
     alias_last => "-last",
     conf_file => "/etc/ballastrc",
     data_port => 4411,
+    data_timeout => 2,
     host_timeout => 180,
     key_file => "/etc/ballast.key",
     run_setsid => 1,
@@ -141,6 +142,8 @@ sub load {
             }
         }
         $return = $result;
+    } elsif ($expr eq 'user_uid') {
+        $return = $load_vars{uid};
     } elsif ($expr =~ /(uid_\d+|user)_(\w+)/) {
         my ($uid, $metric) = ($1, $2);
         if ($uid eq 'user') {
@@ -164,8 +167,6 @@ sub load {
                 $return = $uval;
             }
         }
-    } elsif ($expr eq 'user_uid') {
-        $return = $load_vars{uid};
     } elsif ($expr eq 'users') {
         $return = $load{users};
     } elsif ($expr eq 'random') {
@@ -192,10 +193,17 @@ sub mux_input {
 # called by Net::Server on accepted connection when forked
 sub process_request {
     my $self = shift;
-    while (<STDIN>) {
-        s/\r?\n$//;
-        process_common($self, $_);
+    eval {
+        local $SIG{ALRM} = sub {die "alarm\n"};
+        alarm $conf{data_timeout};
+ 
+        while (<STDIN>) {
+            s/\r?\n$//;
+            process_common($self, $_);
+        }
+        alarm 0;
     }
+    # do nothing on timeout
 }
 
 # common processing for both multiplexed and forked
