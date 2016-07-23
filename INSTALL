@@ -40,9 +40,7 @@ Ballast Installation and Configuration
 
     2.2. Ballast agent
 
-        o Perl >= 5.8 and non-standard modules:
-            o Crypt::CBC (if encryption enabled)
-            o Crypt::X   (if encryption enabled for desired cipher X)
+        o Perl >= 5.8
 
     2.3. Ballast client
 
@@ -58,19 +56,7 @@ Ballast Installation and Configuration
 
     2.4. Ballast server
 
-        o Perl >= 5.8 and non-standard modules:
-            o Crypt::CBC (if encryption enabled)
-            o Crypt::X   (if encryption enabled for desired cipher X)
-            o IO::Multiplex
-            o MLDBM
-            o MLDBM::Sync
-            o Net::Server
-
-    2.5. Ballast log stats (optional)
-
-        o Perl >= 5.6 and non-standard modules:
-            o Date::Parse
-            o Text::Table
+        o Perl >= 5.8
 
 
 3. Installation
@@ -124,11 +110,6 @@ Ballast Installation and Configuration
 
             install -m 755 perl/ballastd /usr/local/sbin
             install -m 644 etc/ballastrc /etc
-
-        Two optional server-related utilities can also be installed:
-
-            install -m 755 perl/ballast-dumpdb /usr/local/sbin
-            install -m 755 perl/ballast-logstats /usr/local/sbin
 
 
 4. Configuration
@@ -223,7 +204,7 @@ Ballast Installation and Configuration
             evaluates to a negative number.  Use the absolute value
             function "abs()" or the conditional evaluation operator
             "?:" in policies when custom values may become negative.
-            
+
         4.1.2. /var/spool/cron/crontabs/agent_user (or equivalent)
 
             The agent does not require any special privileges to run so
@@ -286,9 +267,6 @@ Ballast Installation and Configuration
                     # Use the balancer when connecting to these aliases
                     ProxyCommand /usr/local/bin/ballast %h
 
-                    # Avoids minor error messages (optional)
-                    HostbasedAuthentication no
-
                     # Avoids host key checks for all variants when
                     # StrictHostKeyChecking is enabled (optional)
                     HostKeyAlias foo1.example.com
@@ -312,9 +290,6 @@ Ballast Installation and Configuration
 
                     # Use the balancer on the bastion for these aliases
                     ProxyCommand ssh bastion.example.com /usr/local/bin/ballast %h
-
-                    # Avoids minor error messages (optional)
-                    HostbasedAuthentication no
 
                     # Avoids host key checks for all variants when
                     # StrictHostKeyChecking is enabled (optional)
@@ -383,13 +358,13 @@ Ballast Installation and Configuration
         4.3.3. /var/spool/cron/crontabs/root (or equivalent)
 
             A root crontab may optionally be defined to collect stats on
-            a periodic basis.  The ballast-logstats command takes a
+            a periodic basis.  The ballastd --stats option takes a
             syslog stream on stdin and produces a set of result tables
             on stdout.
 
                 # Collect daily Ballast usage stats at 8am and save in /dir
                 #   (assumes syslog of previous day in /var/log/syslog.0)
-                0 8 * * * /usr/local/sbin/ballast-logstats </var/log/syslog.0 \
+                0 8 * * * /usr/local/sbin/ballastd --stats </var/log/syslog.0 \
                     >/dir/ballast.`/bin/date +%m.%d.%y`
 
             Depending on the Ballast and system logging configuration

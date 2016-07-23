@@ -749,8 +749,8 @@ may be broken with the line continuation operator ("\").
 5. Sample Policies
 
     The following sample policies corresponding to the policies
-    described in the paper "doc/ballast.pdf".  Policies 5.4 to 5.8
-    assume CPU load as the least load metric.
+    described in the paper https://pkolano.github.io/papers/iscc10.pdf.
+    Policies 5.4 to 5.8 assume CPU load as the least load metric.
 
     5.1. Random
 

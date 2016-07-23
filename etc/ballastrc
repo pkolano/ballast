@@ -60,16 +60,14 @@ data_host myserver1 myserver2
 ########################
 
 # cipher that should be used to encrypt data sent to server
-#   (this is strongly recommended)
-#   (requires Crypt::CBC module and Crypt::X module for chosen cipher X)
+#   (requires Crypt::X module installed for a cipher X other than XXTEA_PP)
 #   (example: data_cipher Rijndael)
-#data_cipher nodefault
+#data_cipher XXTEA_PP
 
 # file containing encryption key
 #   (should only be readable by agent and server user)
 #   (encryption key may be any text value)
-#   (example: key_file /etc/ballast.key)
-#key_file nodefault
+#key_file /etc/ballast.key
 
 # group that agent/server will run as
 run_group nogroup
