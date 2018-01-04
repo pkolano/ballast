@@ -116,6 +116,16 @@ if ($conf{random_wait} > 0) {
 my %load;
 $load{alias} = $conf{data_alias};
 $load{host} = (gethostbyname(hostname))[0];
+
+# change host from hostname to ip address only if defined in conf
+if ($conf{use_ip_address}) {
+    use Net::Address::IP::Local;
+    $load{host} = eval {Net::Address::IP::Local->public};
+    if ($@) {
+	die "Unable to determine IP address";
+    }
+}
+
 $load{time} = time;
 
 # collect i/o load

@@ -93,6 +93,9 @@ data_alias foo
 # collect user specific information
 #user_load 1
 
+# use primary ip address of agent host instead of hostname (leave commented out if hostname wanted)
+#use_ip_address yes
+
 
 ########################
 #### Ballast client ####
