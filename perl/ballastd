@@ -72,7 +72,7 @@ my %conf = (
 
 # parse parameters (preserve @ARGV for Net::Server)
 my @save_argv = @ARGV;
-GetOptions(\%conf, "conf_file|c=s", "dump", "stats") or die "Invalid options\n";
+GetOptions(\%conf, "conf_file|c=s", "dump", "jsondump", "stats") or die "Invalid options\n";
 
 # parse configuration
 my $paren_re;
@@ -100,6 +100,7 @@ close FILE;
 $MLDBM::UseDB = 'DB_File';
 
 dump_db() if ($conf{dump});
+json_dump_db() if ($conf{jsondump});
 stats() if ($conf{stats});
 
 # @ARGV must not be restored until after dump
@@ -148,6 +149,81 @@ sub dump_db {
     $sync->UnLock;
     exit;
 }
+
+#################
+# json_dump_db ##
+#################
+sub json_dump_db {
+    # tie persistent load database to hash
+    my %load;
+    my $sync = tie(%load, 'MLDBM::Sync', $conf{data_db}, O_RDONLY, 0600) or
+	die "Unable to tie load database: $!\n";
+    $sync->ReadLock;
+
+    # initial brace at beginning of json data
+    print "\{\n";
+
+    # dump all keys related to hosts
+    foreach my $host (grep(/:alias$/, keys(%load))) {
+
+	# pull hostname/ip out and build subkeys
+	$host =~ s/:alias//;
+	print "    \"$host\":\{\n";
+	foreach my $host_subkey (grep(/^$host/, sort(keys(%load)))) {
+	    if ($ARGV[0]) {
+		# dump only values matched by regex
+		next if ($host_subkey !~ qr/$ARGV[0]/);
+	    }
+	    # remove hostname from each subkey
+	    my $subkey_no_host = $host_subkey;
+	    $subkey_no_host =~ s/$host://;
+	    print "        \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
+	}
+	print "    \},\n";
+    }
+
+   # dump all keys related to last alias
+    print "    \"last\":\{\n";
+
+    foreach my $last_key (grep(/last_/, sort(keys(%load)))) {
+        if ($ARGV[0]) {
+            # dump only values matched by regex                                                                            
+            next if ($last_key !~ qr/$ARGV[0]/);
+        }
+        my $key_no_last = $last_key;
+        $key_no_last =~ s/^last_//;
+        print "        \"$key_no_last\":\"$load{$last_key}\",\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to uids
+    print "    \"uid\":\{\n";
+    foreach my $uid_key (grep(/uid_/, sort(keys(%load)))) {
+        if ($ARGV[0]) {
+            # dump only values matched by regex 
+            next if ($uid_key !~ qr/$ARGV[0]/);
+        }
+        my $key_no_uid = $uid_key;
+        $key_no_uid =~ s/^uid_//;
+        print "        \"$key_no_uid\":\"$load{$uid_key}\",\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to users                                                                                           
+    foreach my $users_key (grep(/users/, sort(keys(%load)))) {
+        if ($ARGV[0]) {
+            # dump only values matched by regex                                                                                
+            next if ($users_key !~ qr/$ARGV[0]/);
+        }
+        print "    \"$users_key\":\"$load{$users_key}\",\n";
+    }
+
+    # final brace at end of json data
+    print "\}\n";
+
+    $sync->UnLock;
+    exit;
+}    
 
 ##############
 #### load ####
