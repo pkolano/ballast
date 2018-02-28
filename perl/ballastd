@@ -156,65 +156,92 @@ sub dump_db {
 sub json_dump_db {
     # tie persistent load database to hash
     my %load;
+    my @active_hosts;
+    my $time = time;
     my $sync = tie(%load, 'MLDBM::Sync', $conf{data_db}, O_RDONLY, 0600) or
-	die "Unable to tie load database: $!\n";
+        die "Unable to tie load database: $!\n";
     $sync->ReadLock;
 
     # initial brace at beginning of json data
     print "\{\n";
 
-    # dump all keys related to hosts
+    # dump all keys related to all seen hosts
+    print "    \"seen_hosts\":\{\n";
     foreach my $host (grep(/:alias$/, keys(%load))) {
 
-	# pull hostname/ip out and build subkeys
+        # pull hostname/ip_address out and build subkeys
 	$host =~ s/:alias//;
-	print "    \"$host\":\{\n";
+        print "        \"$host\":\{\n";
+	# check if host has been seen within timeout limit
+	if ($time < $load{"$host:time"} + $conf{host_timeout}) {
+	    # add host to active hosts list
+	    push @active_hosts, $host;
+	}
 	foreach my $host_subkey (grep(/^$host/, sort(keys(%load)))) {
 	    if ($ARGV[0]) {
 		# dump only values matched by regex
 		next if ($host_subkey !~ qr/$ARGV[0]/);
 	    }
-	    # remove hostname from each subkey
+	    # remove hostname from each subkey and print key value pairs in JSON format
 	    my $subkey_no_host = $host_subkey;
 	    $subkey_no_host =~ s/$host://;
-	    print "        \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
+	    print "            \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
 	}
-	print "    \},\n";
+	print "        \},\n";
     }
+    print "    \},\n";
 
-   # dump all keys related to last alias
+    # dump all keys related to only active hosts
+    print "    \"active_hosts\":\{\n";
+    foreach my $host (@active_hosts) {
+        print "        \"$host\":\{\n";
+	foreach my $host_subkey (grep(/^$host/, sort(keys(%load)))) {
+	    if ($ARGV[0]) {
+		# dump only values matched by regex
+		next if ($host_subkey !~ qr/$ARGV[0]/);
+	    }
+	    # remove hostname from each subkey and print key value pairs in JSON format
+	    my $subkey_no_host = $host_subkey;
+	    $subkey_no_host =~ s/$host://;
+	    print "            \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
+	}
+	print "        \},\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to last alias and print key value pairs in JSON format
     print "    \"last\":\{\n";
-
+	
     foreach my $last_key (grep(/last_/, sort(keys(%load)))) {
-        if ($ARGV[0]) {
-            # dump only values matched by regex                                                                            
-            next if ($last_key !~ qr/$ARGV[0]/);
-        }
-        my $key_no_last = $last_key;
-        $key_no_last =~ s/^last_//;
+	if ($ARGV[0]) {
+	    # dump only values matched by regex
+	    next if ($last_key !~ qr/$ARGV[0]/);
+	}
+	my $key_no_last = $last_key;	
+	$key_no_last =~ s/^last_//;
         print "        \"$key_no_last\":\"$load{$last_key}\",\n";
     }
     print "    \},\n";
 
-    # dump all keys related to uids
+    # dump all keys related to uids and print key value pairs in JSON format
     print "    \"uid\":\{\n";
     foreach my $uid_key (grep(/uid_/, sort(keys(%load)))) {
-        if ($ARGV[0]) {
-            # dump only values matched by regex 
-            next if ($uid_key !~ qr/$ARGV[0]/);
-        }
-        my $key_no_uid = $uid_key;
-        $key_no_uid =~ s/^uid_//;
+	if ($ARGV[0]) {
+	    # dump only values matched by regex
+	    next if ($uid_key !~ qr/$ARGV[0]/);
+	}
+	my $key_no_uid = $uid_key;	
+	$key_no_uid =~ s/^uid_//;
         print "        \"$key_no_uid\":\"$load{$uid_key}\",\n";
     }
     print "    \},\n";
 
-    # dump all keys related to users                                                                                           
+    # dump all keys related to users and print key value pairs in JSON format
     foreach my $users_key (grep(/users/, sort(keys(%load)))) {
-        if ($ARGV[0]) {
-            # dump only values matched by regex                                                                                
-            next if ($users_key !~ qr/$ARGV[0]/);
-        }
+	if ($ARGV[0]) {
+	    # dump only values matched by regex
+	    next if ($users_key !~ qr/$ARGV[0]/);
+	}
         print "    \"$users_key\":\"$load{$users_key}\",\n";
     }
 
@@ -223,7 +250,7 @@ sub json_dump_db {
 
     $sync->UnLock;
     exit;
-}    
+}
 
 ##############
 #### load ####
