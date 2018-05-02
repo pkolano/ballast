@@ -15,8 +15,8 @@ Ballast consists of a Ballast agent on each balanced host, a Ballast
 server on one or more data servers, and a Ballast client on each bastion
 and internal host from which the user might access balanced hosts.  The
 Ballast agent periodically collects system load information and sends it
-to the Ballast server.  The server aggregates the load data received from
-all agents and stores it in a suitable form for making balancing
+to the Ballast server.  The server aggregates the load data received
+from all agents and stores it in a suitable form for making balancing
 decisions.  When the user invokes SSH to a host alias designated for
 balancing, SSH triggers the Ballast client, which contacts the server to
 resolve balancing aliases to actual balanced host names.  The server
