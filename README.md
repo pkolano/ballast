@@ -30,6 +30,11 @@ selections specifically to each individual user, the utility to each
 user can be maximized instead of choosing a system that may be best
 according to a common metric, but not ideal for the user's needs.
 
+Ballast is in active production at the NASA Advanced Supercomputing
+Facility (https://www.nas.nasa.gov/hecc/support/kb/entry/233) and has 
+handled over 75M balancing requests (as of May 2018) since deployment
+in June 2009.
+
 For full details of the Ballast architecture, see
 https://pkolano.github.io/papers/iscc10.pdf.  For installation details,
 see "INSTALL".  For usage details, see "doc/usage.txt".  For balancing
