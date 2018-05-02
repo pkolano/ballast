@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright (C) 2010-2016 United States Government as represented by the
+# Copyright (C) 2010-2018 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration
 # (NASA).  All Rights Reserved.
 #
@@ -41,7 +41,7 @@ use IO::Select;
 use IO::Socket;
 use IO::Socket::INET;
 
-our $VERSION = 0.20;
+our $VERSION = 0.21;
 
 # default configuration
 my %conf = (
@@ -50,6 +50,7 @@ my %conf = (
     conf_file => "/etc/ballastrc",
     data_port => 4411,
     data_timeout => 2,
+    relay_buffer => 1048576,
     relay_port => 22,
 );
 
@@ -148,30 +149,20 @@ sub relay {
         Proto => 'tcp',
     ) or die "ERROR: cannot connect to $host:$port\n";
 
-    $SIG{INT}  = sub {$sock->close if (defined $sock)};
-    $SIG{CHLD} = 'IGNORE';
+    foreach my $fh ($sock, \*STDIN, \*STDOUT) {
+        $fh->autoflush(1);
+        binmode $fh;
+    }
+    my $sel = IO::Select->new($sock, \*STDIN);
 
-    $sock->autoflush(1);
-    STDIN->autoflush(1);
-    STDOUT->autoflush(1);
-
-    binmode $sock;
-    binmode STDIN;
-    binmode STDOUT;
-
-    my $sel = IO::Select->new;
-    $sel->add($sock);
-    $sel->add(\*STDIN);
-
-    my $bytes = 16384;
     while (my @read = $sel->can_read) {
-        foreach my $fh (@read) {
-            if ($fh == $sock) {
-                my $n = $sock->sysread(my $buf, $bytes);
-                STDOUT->syswrite($buf, $n) if ($n > 0);
-            } elsif ($fh == \*STDIN) {
-                my $n = STDIN->sysread(my $buf, $bytes);
-                $sock->syswrite($buf, $n) if ($n > 0);
+        foreach my $in (@read) {
+            my $nread = $in->sysread(my $buf, $conf{relay_buffer});
+            exit if (!defined $nread);
+            if ($nread > 0) {
+                my $out = $in == $sock ? \*STDOUT : $sock;
+                my $nwrite = $out->syswrite($buf, $nread);
+                exit if (!defined $nwrite || $nwrite != $nread);
             }
         }
     }

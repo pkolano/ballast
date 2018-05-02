@@ -146,10 +146,11 @@ Ballast Installation and Configuration
                 data_cipher
                 key_file
 
-            The Perl Crypt::CBC module must be installed on all agent
-            hosts as well as the module Crypt::X for the desired
-            cipher X.  For example, to use standard AES encryption,
-            install Crypt::Rijndael and set data_cipher to Rijndael.
+            By default, an embedded version of the XXTEA_PP cipher is
+            used.  To use a different cipher X, the perl module Crypt::X
+            must be installed on all agent hosts.  For example, to use
+            standard AES encryption, install Crypt::Rijndael and set
+            data_cipher to Rijndael.
 
             If many agents are scheduled to execute at the same time
             via cron, it is beneficial for agents to wait a random
@@ -168,7 +169,7 @@ Ballast Installation and Configuration
                 load_hook
 
             The value for this item is the path to any executable
-            program.  The program should print whitespace-separted
+            program.  The program should print whitespace-separated
             key-value pairs to stdout, where the key is an alphanumeric
             value (equivalent to Perl regex "\w+") and the value is any
             text (including spaces).  For example, the following script
@@ -331,10 +332,11 @@ Ballast Installation and Configuration
                 data_cipher
                 key_file
 
-            The Perl Crypt::CBC module must be installed on all server
-            hosts as well as the module Crypt::X for the desired cipher
-            X.  For example, to use standard AES encryption, install
-            Crypt::Rijndael and set data_cipher to Rijndael.
+            By default, an embedded version of the XXTEA_PP cipher is
+            used.  To use a different cipher X, the perl module Crypt::X
+            must be installed on all server hosts.  For example, to use
+            standard AES encryption, install Crypt::Rijndael and set
+            data_cipher to Rijndael.
 
         4.3.2. /etc/init.d/ballastd (or equivalent)
 
@@ -349,8 +351,9 @@ Ballast Installation and Configuration
             file.
 
             Note that the server runs with Perl taint mode enabled so if
-            encrypted communication is enabled and the Crypt::* modules
-            are installed in a non-standard location (i.e. not listed in
+            encrypted communication is enabled, a cipher X other than
+            XXTEA_PP is used, and the corresponding Crypt::X module is
+            installed in a non-standard location (i.e. not listed in
             @INC by "perl -V"), then the server must be invoked using:
 
                 perl -T -I/module/location /usr/local/sbin/ballastd
@@ -390,4 +393,53 @@ Ballast Installation and Configuration
     HUP signal to the ballastd process.  Note that the data_port setting
     cannot be modified in this manner and will crash the server if
     attempted.  Stop and restart to change this value.
+
+
+6. Troubleshooting
+
+    6.1. The balancer sends users to a different host every time it is invoked.
+
+        All servers are down or cannot be contacted so the client has
+        reverted to its default randomized strategy.  Check the status
+        of the server(s) and restart, if necessary, as discussed in
+        Section 5.
+
+    6.2. The balancer sends users to the same host even though other
+         hosts have clearly had lower load for more than a couple
+         minutes.
+
+        The agents on the other hosts are down or are unable to
+        contact the server(s).  On each host, check that the agent has
+        reported in to the server within the last five minutes (the
+        server's view of when each host has last reported in can be
+        shown by running "ballastd --dump :time" on the server).
+
+        If the agent has not reported in, debug on each host with the
+        following.
+
+            - Check that cron is running.
+
+            - Check that the agent crontab is installed as discussed
+              in Section 4.1.2.
+
+            - Check that the agent executable
+              /usr/local/sbin/ballast-agent exists.
+
+            - Check that the server port 4411 is accessible from the
+              client host.
+
+            - Check for execution errors by manually invoking
+              /usr/local/sbin/ballast-agent as root and examining the
+              output for errors.
+
+    6.3. The balancer never sends users to a particular host
+
+        The agent on that host may be down or unable to contact the
+        server(s).  See above solution.
+
+    6.4. The balancer reports that are hosts are unavailable even
+         though they are not.
+
+        The agents on all hosts are down or unable to contact the
+        server(s).  See above solution.
 

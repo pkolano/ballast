@@ -112,6 +112,9 @@ alias_domain .example.com
 hosts_foo foo1 foo2 foo3
 hosts_bar bar1 bar2
 
+# size of buffer to use in built-in relay
+#relay_buffer 1048576
+
 # path to tcp relay
 #   (perl client has beta relay feature built-in so this can be commented out)
 #   (c client requires external program such as netcat or tcpconnect)

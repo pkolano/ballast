@@ -1,6 +1,6 @@
 #!/usr/bin/perl -T
 #
-# Copyright (C) 2010-2016 United States Government as represented by the
+# Copyright (C) 2010-2018 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration
 # (NASA).  All Rights Reserved.
 #
@@ -52,7 +52,7 @@ use Socket;
 use Storable qw(thaw);
 require Text::FormatTable;
 
-our $VERSION = 0.20;
+our $VERSION = 0.21;
 
 # default configuration
 my %conf = (

@@ -52,3 +52,7 @@ CHANGES
     - Moved ballast-logstats functioality into ballastd accessible via --stats
     - Changed stats output to use Text::FormatTable instead of Text::Table
     - Fixed /proc/net/dev parsing (interface may/may not have space after)
+
+* Ballast 2.1 (05/02/18)
+    - Added abort on read/write errors to built-in relay
+    - Added relay_buffer config option to control i/o size of built-in relay

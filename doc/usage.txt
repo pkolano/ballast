@@ -73,6 +73,18 @@ Using Ballast
 
         ballastd --dump foo1:
 
+    To see all data:
+
+        ballastd --dump
+
+    To see all hosts for which data is collected:
+
+        ballastd --dump host
+
+    To see last time data was updated for each host:
+
+        ballastd --dump :time
+
     Some values are computed on the fly so will not be listed in the
     database.  These include client_ip, random, user_*, and *_rank.
 

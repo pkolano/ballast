@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2010 United States Government as represented by the
+// Copyright (C) 2010-2018 United States Government as represented by the
 // Administrator of the National Aeronautics and Space Administration
 // (NASA).  All Rights Reserved.
 //
@@ -45,7 +45,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define VERSION "1.7"
+#define VERSION "2.1"
 
 #ifndef CONF_FILE
 #define CONF_FILE "/etc/ballastrc"
