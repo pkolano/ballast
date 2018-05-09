@@ -111,6 +111,11 @@ Ballast Installation and Configuration
             install -m 755 perl/ballastd /usr/local/sbin
             install -m 644 etc/ballastrc /etc
 
+        If ballast server will be run as a systemd service:
+
+            install -m 644 etc/systemd/system/ballast.service /etc/systemd/system
+	    install -m 644 etc/systemd/system/ballast.socket /etc/systemd/system
+
 
 4. Configuration
 
@@ -205,6 +210,12 @@ Ballast Installation and Configuration
             evaluates to a negative number.  Use the absolute value
             function "abs()" or the conditional evaluation operator
             "?:" in policies when custom values may become negative.
+
+               use_ip_address
+
+            If host IP address should be used rather than hostname
+	    for ballast-agent to pass onto the server, then set this
+	    item to a value of 1.
 
         4.1.2. /var/spool/cron/crontabs/agent_user (or equivalent)
 
@@ -340,8 +351,15 @@ Ballast Installation and Configuration
 
         4.3.2. /etc/init.d/ballastd (or equivalent)
 
-            To invoke the server at boot time, an appropriate
-            /etc/init.d script and /etc/rc*.d links must be created.
+            To invoke the server at boot time, the included systemd
+	    .service and .socket files must be installed on a systemd host.
+	    Once installed, ballast server can be managed with standard
+	    systemctl commands, i.e.
+	        systemctl enable ballast
+		systemctl start ballast
+
+            Alternatively, for non-systemd hosts an appropriate /etc/init.d
+	    script and /etc/rc*.d links must be created.
             The server can simply be invoked as:
 
                 /usr/local/sbin/ballastd
