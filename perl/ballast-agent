@@ -1,6 +1,6 @@
 #!/usr/bin/perl -T
 #
-# Copyright (C) 2010-2018 United States Government as represented by the
+# Copyright (C) 2010-2019 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration
 # (NASA).  All Rights Reserved.
 #
@@ -44,7 +44,7 @@ use POSIX qw(setgid setuid);
 use Storable qw(nfreeze);
 use Sys::Hostname;
 
-our $VERSION = 0.21;
+our $VERSION = 0.22;
 
 my %conf = (
     conf_file => "/etc/ballastrc",
@@ -116,6 +116,14 @@ if ($conf{random_wait} > 0) {
 my %load;
 $load{alias} = $conf{data_alias};
 $load{host} = (gethostbyname(hostname))[0];
+
+if ($conf{use_ip_address}) {
+    # reference host by ip address instead of host name
+    require Net::Address::IP::Local;
+    $load{host} = eval {Net::Address::IP::Local->public};
+    die "Unable to determine IP address\n" if ($@);
+}
+
 $load{time} = time;
 
 # collect i/o load
@@ -318,6 +326,10 @@ CRYPT_CBC
 $fatpacked{"Crypt/XXTEA_PP.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'CRYPT_XXTEA_PP';
   package Crypt::XXTEA_PP;use strict;use warnings;use utf8;use integer;use Carp;our$VERSION='0.0102';use Config;BEGIN {if (not defined$Config{use64bitint}){require bigint;bigint->import}}my$DELTA=0x9e3779b9;my$FACTOR=4;my$KEY_SIZE=16;my$ELEMENTS_IN_KEY=$KEY_SIZE / $FACTOR;my$MIN_BLOCK_SIZE=8;my$MIN_ELEMENTS_IN_BLOCK=$MIN_BLOCK_SIZE / $FACTOR;use constant keysize=>$KEY_SIZE;use constant blocksize=>$MIN_BLOCK_SIZE;sub isint {local $_=shift;return 0 unless defined;return 1 if /\A\s*[+-]?(?:0|[1-9][0-9]*)\s*\z/s;0}sub all (&@) {my$f=shift;$f->()or return 0 foreach @_;return 1}sub new {my$class=shift;my$key=shift;my$xxtea_key;croak('key is required')if not defined$key;if (my$ref_of_key=ref($key)){croak(sprintf('key must be a %d-byte-long STRING or a reference of ARRAY',$KEY_SIZE))if not $ref_of_key eq 'ARRAY';croak(sprintf('key must has %d elements if key is a reference of ARRAY',$ELEMENTS_IN_KEY))if scalar(@{$key})!=$ELEMENTS_IN_KEY;croak('each element of key must be a 32bit Integer if key is a reference of ARRAY')if not all {isint($_)!=0}@{$key};$xxtea_key=$key}else {croak(sprintf('key must be a %d-byte-long STRING or a reference of ARRAY',$KEY_SIZE))if length$key!=$KEY_SIZE;$xxtea_key=key_setup($key)}my$self={key=>$xxtea_key,};bless$self,ref($class)|| $class}sub encrypt {my$self=shift;my$plain_text=shift;croak(sprintf('plain_text size must be at least %d bytes',$MIN_BLOCK_SIZE))if length($plain_text)< $MIN_BLOCK_SIZE;croak(sprintf('plain_text size must be a multiple of %d bytes',$FACTOR))if length($plain_text)% $FACTOR!=0;my@block=unpack 'N*',$plain_text;my$cipher_text_ref=$self->encrypt_block(\@block);return pack('N*',@{$cipher_text_ref})}sub decrypt {my$self=shift;my$cipher_text=shift;croak(sprintf('cipher_text size must be at least %d bytes',$MIN_BLOCK_SIZE))if length($cipher_text)< $MIN_BLOCK_SIZE;croak(sprintf('cipher_text size must be a multiple of %d bytes',$FACTOR))if length($cipher_text)% $FACTOR!=0;my@block=unpack 'N*',$cipher_text;my$plain_text_ref=$self->decrypt_block(\@block);return pack('N*',@{$plain_text_ref})}sub encrypt_block {my$self=shift;my$block_ref=shift;my$key_ref=$self->{key};croak(sprintf('block must has at least %d elements',$MIN_ELEMENTS_IN_BLOCK))if scalar(@{$block_ref})< $MIN_ELEMENTS_IN_BLOCK;croak(sprintf('key must has %d elements',$ELEMENTS_IN_KEY))if scalar(@{$key_ref})!=$ELEMENTS_IN_KEY;my@block=map {$_ & 0xffff_ffff}@{$block_ref};my@key=map {$_ & 0xffff_ffff}@{$key_ref};my$delta=$DELTA & 0xffff_ffff;my$rounds=6 + 52 / (scalar@block);my$sum=0 & 0xffff_ffff;my$z=$block[-1];my ($e,$p,$y);for (0 .. $rounds-1){$sum=($sum + $delta)& 0xffff_ffff;$e=($sum >> 2)& 3;for (0 .. $#block-1){$p=$_;$y=$block[$p + 1 ];$z=$block[$p ]=($block[$p ]+ _MX($y,$z,$sum,$p,$e,\@key))& 0xffff_ffff}$p += 1;$y=$block[0];$z=$block[-1]=($block[-1]+ _MX($y,$z,$sum,$p,$e,\@key))& 0xffff_ffff}return \@block}sub decrypt_block {my$self=shift;my$block_ref=shift;my$key_ref=$self->{key};croak(sprintf('block must has at least %d elements',$MIN_ELEMENTS_IN_BLOCK))if scalar(@{$block_ref})< $MIN_ELEMENTS_IN_BLOCK;croak(sprintf('key must has %d elements',$ELEMENTS_IN_KEY))if scalar(@{$key_ref})!=$ELEMENTS_IN_KEY;my@block=map {$_ & 0xffff_ffff}@{$block_ref};my@key=map {$_ & 0xffff_ffff}@{$key_ref};my$delta=$DELTA & 0xffff_ffff;my$rounds=6 + 52 / (scalar@block);my$sum=($rounds * $delta)& 0xffff_ffff;my$y=$block[0];my ($e,$p,$z);for (0 .. $rounds-1){$e=($sum >> 2)& 3;for (reverse 1 .. $#block){$p=$_;$z=$block[$p - 1 ];$y=$block[$p ]=($block[$p ]- _MX($y,$z,$sum,$p,$e,\@key))& 0xffff_ffff}$p -= 1;$z=$block[-1];$y=$block[0]=($block[0]- _MX($y,$z,$sum,$p,$e,\@key))& 0xffff_ffff;$sum=($sum - $delta)& 0xffff_ffff}return \@block}sub _MX {my ($y,$z,$sum,$p,$e,$key)=@_;return ((((((($z >> 5)& 0xffff_ffff)^ (($y << 2)& 0xffff_ffff))& 0xffff_ffff)+ (((($y >> 3)& 0xffff_ffff)^ (($z << 4)& 0xffff_ffff))& 0xffff_ffff))& 0xffff_ffff)^ (((($sum ^ $y)& 0xffff_ffff)+ (($key->[($p & 3)^ $e ]^ $z)& 0xffff_ffff))& 0xffff_ffff))& 0xffff_ffff}sub key_setup {my$key_str=shift;croak(sprintf('key must be %s bytes long',$KEY_SIZE))if length($key_str)!=$KEY_SIZE;my@xxtea_key=unpack 'N*',$key_str;return \@xxtea_key}1;
 CRYPT_XXTEA_PP
+
+$fatpacked{"Net/Address/IP/Local.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'NET_ADDRESS_IP_LOCAL';
+  package Net::Address::IP::Local;use version;our$VERSION=qv('0.1.2');use warnings;use strict;use Error ':try';use constant TRUE=>(0==0);use constant FALSE=>not TRUE;use constant remote_address_ipv4_default=>'198.41.0.4';use constant remote_address_ipv6_default=>'2001:503:ba3e::2:30';use constant remote_port_default=>53;sub public {my ($class)=@_;return$class->connected_to($class->remote_address_ipv4_default)if not $class->ipv6_support;my$ip_address;try {$ip_address=$class->connected_to($class->remote_address_ipv6_default)}catch Net::Address::IP::Local::Error with {my$error=shift;try {$ip_address=$class->connected_to($class->remote_address_ipv4_default)}catch Net::Address::IP::Local::Error with {$error->throw}};return$ip_address}sub public_ipv4 {my ($class)=@_;$class->ipv4_support or throw Net::Address::IP::Local::Error("IPv4 not supported");return$class->connected_to($class->remote_address_ipv4_default)}sub public_ipv6 {my ($class)=@_;$class->ipv6_support or throw Net::Address::IP::Local::Error("IPv6 not supported");return$class->connected_to($class->remote_address_ipv6_default)}sub connected_to {my ($class,$remote_address)=@_;my$socket_class;if ($class->ipv6_support){$socket_class='IO::Socket::INET6'}elsif ($class->ipv4_support){$socket_class='IO::Socket::INET'}else {throw Net::Address::IP::Local::Error("Neither IPv4 nor IPv6 supported")}my$socket=$socket_class->new(Proto=>'udp',PeerAddr=>$remote_address,PeerPort=>$class->remote_port_default);defined($socket)or throw Net::Address::IP::Local::Error("Unable to create UDP socket: $!");return$socket->sockhost}my$ipv4_support;sub ipv4_support {if (not defined($ipv4_support)){eval {require IO::Socket::INET};$ipv4_support=not $@}return$ipv4_support}my$ipv6_support;sub ipv6_support {if (not defined($ipv6_support)){eval {require IO::Socket::INET6};$ipv6_support=not $@}return$ipv6_support}package Net::Address::IP::Local::Error;use base qw(Error::Simple);package Net::Address::IP::Local;TRUE;
+NET_ADDRESS_IP_LOCAL
 
 s/^  //mg for values %fatpacked;
 

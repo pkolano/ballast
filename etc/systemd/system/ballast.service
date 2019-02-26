@@ -1,0 +1,16 @@
+[Unit]
+Description=NASA Ballast server
+After=network.target auditd.service
+ConditionPathExists=!/etc/ballastd_not_to_be_run
+
+[Service]
+ExecStart=/usr/local/sbin/ballastd
+Type=forking
+PIDFile=/var/run/ballastd.pid
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=ballastd.service

@@ -65,11 +65,12 @@ Using Ballast
 
 2. Ballast server
 
-    The ballastd --dump option can be used to display the load
-    information stored in the server's database.  It takes a single
-    optional argument, which is a regular expression that can be used to
-    filter the output.  For example, to see all load information
-    associated with a host foo1, the following command can be issued:
+    The ballastd --dump option can be used to display the load information
+    stored in the server's database as parameter = value pairs. It takes a
+    single optional argument, which is a regular expression that can be
+    used to filter the output.  For example, to see all load information
+    associated with a host foo1 in parameter = value pairs, the following
+    command can be issued:
 
         ballastd --dump foo1:
 
@@ -88,3 +89,14 @@ Using Ballast
     Some values are computed on the fly so will not be listed in the
     database.  These include client_ip, random, user_*, and *_rank.
 
+    The ballastd --jsondump option can be used to display the load
+    information stored in the server's database as json formatted
+    key:subkey:value objects.  It takes a single optional argument, which
+    is a regular expression that can be used to filter the output.  For
+    example, to see all load information associated with a host foo1
+    in json format, the following command can be issued:
+
+        ballastd --jsondump foo1:
+
+    Some values are computed on the fly so will not be listed in the
+    database.  These include client_ip, random, user_*, and *_rank.

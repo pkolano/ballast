@@ -261,8 +261,8 @@ may be broken with the line continuation operator ("\").
 
     3.2. Invoking User Terms
 
-        These terms (except client_ip and user_uid) are only available
-        when the "user_load" setting has been kept enabled.
+        These terms (except client_ip, user_gid, and user_uid) are only
+        available when the "user_load" setting has been kept enabled.
 
         3.2.1. User Load
 
@@ -273,6 +273,10 @@ may be broken with the line continuation operator ("\").
             user_cpu
 
                 average cpu time in jiffies per session of invoking user
+
+            user_gid
+
+                gid of invoking user
 
             user_io_bytes
 
@@ -697,18 +701,24 @@ may be broken with the line continuation operator ("\").
         can be set to a large value while others are balanced by the
         normal policy.
 
-    4.3. User-Specific Balancing
+    4.3. User/Group-Specific Balancing
 
-        Balancing decision can be made on a per-user basis using the
-        user_uid term.  The basic form of a user-specific expression is:
+        Balancing decision can be made on a per-user/group basis using
+        the user_uid/user_gid term.  The basic form of a user-specific
+        expression is:
 
             user_uid == 1001 ? expr1 : expr2
 
-        In this case, the user whose uid is 1001 will be balanced by
-        expr1 while all other users will be balanced by expr2.  As an
-        example, suppose premium/admin users are allowed to access all
-        hosts while trial/normal users can only go to a certain subset.
-        Additional user-specific policies are shown in the next section.
+        Likewise, the basic form of a group-specific expression is:
+
+            user_gid == 1001 ? expr1 : expr2
+
+        In this case, the user/group whose uid/gid is 1001 will be
+        balanced by expr1 while all other users will be balanced by
+        expr2.  As an example, suppose premium/admin users are allowed
+        to access all hosts while trial/normal users can only go to a
+        certain subset.  Additional user-specific policies are shown in
+        the next section.
 
     4.4. User-Directed Balancing
 

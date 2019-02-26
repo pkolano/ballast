@@ -71,8 +71,8 @@ Ballast Installation and Configuration
 
         On each host to be load balanced:
 
-            install -m 755 perl/ballast-agent /usr/local/sbin
-            install -m 644 etc/ballastrc /etc
+            install -m 755 perl/ballast-agent /usr/local/sbin/
+            install -m 644 etc/ballastrc /etc/
 
     3.2. Ballast client installation
 
@@ -87,8 +87,8 @@ Ballast Installation and Configuration
 
             On each host that will invoke the balancer:
 
-                install -m 755 perl/ballast /usr/local/bin
-                install -m 644 etc/ballastrc /etc
+                install -m 755 perl/ballast /usr/local/bin/
+                install -m 644 etc/ballastrc /etc/
 
         3.2.2. C client
 
@@ -101,15 +101,20 @@ Ballast Installation and Configuration
 
             On each host that will invoke the balancer:
 
-                install -m 755 c/ballast /usr/local/bin
-                install -m 644 etc/ballastrc /etc
+                install -m 755 c/ballast /usr/local/bin/
+                install -m 644 etc/ballastrc /etc/
 
     3.3. Ballast server installation
 
         On one or more hosts:
 
-            install -m 755 perl/ballastd /usr/local/sbin
-            install -m 644 etc/ballastrc /etc
+            install -m 755 perl/ballastd /usr/local/sbin/
+            install -m 644 etc/ballastrc /etc/
+
+        If the ballast server will be run as a systemd service:
+
+            install -m 644 etc/systemd/system/ballast.service /etc/systemd/system/
+            install -m 644 etc/systemd/system/ballast.socket /etc/systemd/system/
 
 
 4. Configuration
@@ -162,6 +167,13 @@ Ballast Installation and Configuration
 
             which specifies a number of seconds to randomly wait before
             collecting and sending data to the server.
+
+            To reference hosts by IP address instead of host name,
+            the following setting:
+
+               use_ip_address
+
+            should be set to 1.
 
             Custom load information can be processed by the server
             using the following setting:
@@ -338,9 +350,16 @@ Ballast Installation and Configuration
             standard AES encryption, install Crypt::Rijndael and set
             data_cipher to Rijndael.
 
-        4.3.2. /etc/init.d/ballastd (or equivalent)
+        4.3.2.  /etc/systemd/system/multi-user.target.wants/ballast.service
+                or /etc/init.d/ballastd
 
-            To invoke the server at boot time, an appropriate
+            To invoke the server at boot time on a systemd host, the
+            ballast service must be enabled (ensure .service and .socket
+            files installed from Section 3.3):
+            
+                systemctl enable ballast
+
+            Alternatively, for non-systemd hosts, an appropriate
             /etc/init.d script and /etc/rc*.d links must be created.
             The server can simply be invoked as:
 
@@ -378,12 +397,15 @@ Ballast Installation and Configuration
 5. Activation
 
     Once Ballast has been configured, the server must be started.
-    This is typically achieved through the corresponding "/etc/init.d"
-    script:
+    To start via systemd, use:
+
+        systemctl start ballast
+
+    To start via SysV init, use:
 
         /etc/init.d/ballastd start
 
-    Or it can be invoked directly:
+    To start manually, use:
 
         /usr/local/sbin/ballastd
 

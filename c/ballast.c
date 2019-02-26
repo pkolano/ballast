@@ -45,7 +45,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define VERSION "2.1"
+#define VERSION "2.2"
 
 #ifndef CONF_FILE
 #define CONF_FILE "/etc/ballastrc"
@@ -239,8 +239,8 @@ int main(int argc, char *argv[]) {
         // given host matches defined alias, so load balance
         // construct balancing request
         char sdata[DATA_SIZE];
-        snprintf(sdata, DATA_SIZE, "%s%s %d", arg, 
-            last ? getconf("alias_last") : "", getuid());
+        snprintf(sdata, DATA_SIZE, "%s%s %d:%d", arg, 
+            last ? getconf("alias_last") : "", getuid(), getgid());
         // concatenate optional arguments to request
         for (int i = optind + 1; i < argc; i++) {
             if (strlen(argv[i]) + 2 > DATA_SIZE - strlen(sdata)) {

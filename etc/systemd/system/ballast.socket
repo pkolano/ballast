@@ -1,0 +1,11 @@
+[Unit]
+Description=NASA Ballast server socket
+Before=ballast.service
+Conflicts=ballast.service
+ConditionPathExists=!/etc/ballastd_not_to_be_run
+
+[Socket]
+ListenStream=4411
+
+[Install]
+WantedBy=sockets.target

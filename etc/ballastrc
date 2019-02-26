@@ -93,6 +93,9 @@ data_alias foo
 # collect user specific information
 #user_load 1
 
+# reference host by ip address instead of host name
+#use_ip_address 0
+
 
 ########################
 #### Ballast client ####

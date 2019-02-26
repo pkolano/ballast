@@ -1,6 +1,6 @@
 #!/usr/bin/perl -T
 #
-# Copyright (C) 2010-2018 United States Government as represented by the
+# Copyright (C) 2010-2019 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration
 # (NASA).  All Rights Reserved.
 #
@@ -52,7 +52,7 @@ use Socket;
 use Storable qw(thaw);
 require Text::FormatTable;
 
-our $VERSION = 0.21;
+our $VERSION = 0.22;
 
 # default configuration
 my %conf = (
@@ -72,7 +72,7 @@ my %conf = (
 
 # parse parameters (preserve @ARGV for Net::Server)
 my @save_argv = @ARGV;
-GetOptions(\%conf, "conf_file|c=s", "dump", "stats") or die "Invalid options\n";
+GetOptions(\%conf, "conf_file|c=s", "dump", "jsondump", "stats") or die "Invalid options\n";
 
 # parse configuration
 my $paren_re;
@@ -100,6 +100,7 @@ close FILE;
 $MLDBM::UseDB = 'DB_File';
 
 dump_db() if ($conf{dump});
+json_dump_db() if ($conf{jsondump});
 stats() if ($conf{stats});
 
 # @ARGV must not be restored until after dump
@@ -149,6 +150,97 @@ sub dump_db {
     exit;
 }
 
+#################
+# json_dump_db ##
+#################
+sub json_dump_db {
+    # tie persistent load database to hash
+    my %load;
+    my @active_hosts;
+    my $time = time;
+    my $sync = tie(%load, 'MLDBM::Sync', $conf{data_db}, O_RDONLY, 0600) or
+    die "Unable to tie load database: $!\n";
+    $sync->ReadLock;
+
+    # initial brace at beginning of json data
+    print "\{\n";
+
+    # dump all keys related to all seen hosts
+    print "    \"seen_hosts\":\{\n";
+    foreach my $host (grep(/:alias$/, keys(%load))) {
+        # pull hostname/ip_address out and build subkeys
+        $host =~ s/:alias//;
+        print "        \"$host\":\{\n";
+        # check if host has been seen within timeout limit
+        if ($time < $load{"$host:time"} + $conf{host_timeout}) {
+            # add host to active hosts list
+            push @active_hosts, $host;
+        }
+        foreach my $host_subkey (grep(/^$host/, sort(keys(%load)))) {
+            # dump only values matched by regex
+            next if ($ARGV[0] && $host_subkey !~ qr/$ARGV[0]/);
+            # remove hostname from each subkey and print key value pairs in JSON format
+            my $subkey_no_host = $host_subkey;
+            $subkey_no_host =~ s/$host://;
+            print "            \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
+        }
+        print "        \},\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to only active hosts
+    print "    \"active_hosts\":\{\n";
+    foreach my $host (@active_hosts) {
+        print "        \"$host\":\{\n";
+        foreach my $host_subkey (grep(/^$host/, sort(keys(%load)))) {
+            # dump only values matched by regex
+            next if ($ARGV[0] && $host_subkey !~ qr/$ARGV[0]/);
+            # remove hostname from each subkey and print key value pairs in JSON format
+            my $subkey_no_host = $host_subkey;
+            $subkey_no_host =~ s/$host://;
+            print "            \"$subkey_no_host\":\"$load{$host_subkey}\",\n";
+        }
+        print "        \},\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to last alias and print key value pairs in JSON format
+    print "    \"last\":\{\n";
+	
+    foreach my $last_key (grep(/last_/, sort(keys(%load)))) {
+        # dump only values matched by regex
+        next if ($ARGV[0] && $last_key !~ qr/$ARGV[0]/);
+        my $key_no_last = $last_key;	
+        $key_no_last =~ s/^last_//;
+        print "        \"$key_no_last\":\"$load{$last_key}\",\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to uids and print key value pairs in JSON format
+    print "    \"uid\":\{\n";
+    foreach my $uid_key (grep(/uid_/, sort(keys(%load)))) {
+        # dump only values matched by regex
+        next if ($ARGV[0] && $uid_key !~ qr/$ARGV[0]/);
+        my $key_no_uid = $uid_key;	
+        $key_no_uid =~ s/^uid_//;
+        print "        \"$key_no_uid\":\"$load{$uid_key}\",\n";
+    }
+    print "    \},\n";
+
+    # dump all keys related to users and print key value pairs in JSON format
+    foreach my $users_key (grep(/users/, sort(keys(%load)))) {
+        # dump only values matched by regex
+        next if ($ARGV[0] && $users_key !~ qr/$ARGV[0]/);
+        print "    \"$users_key\":\"$load{$users_key}\",\n";
+    }
+
+    # final brace at end of json data
+    print "\}\n";
+
+    $sync->UnLock;
+    exit;
+}
+
 ##############
 #### load ####
 ##############
@@ -182,6 +274,8 @@ sub load {
             }
         }
         $return = $result;
+    } elsif ($expr eq 'user_gid') {
+        $return = $load_vars{gid};
     } elsif ($expr eq 'user_uid') {
         $return = $load_vars{uid};
     } elsif ($expr =~ /(uid_\d+|user)_(\w+)/) {
@@ -261,7 +355,7 @@ sub process_common {
     if ($text =~ /^#/) {
         substr($text, 0, 1) = "";
         update_load($self, $text);
-    } elsif ($text =~ /^([\w-]+)\s+(\d+)(.*)$/) {
+    } elsif ($text =~ /^([\w-]+)\s+([\d:]+)(.*)$/) {
         select_host($self, $1, $2, $3);
     }
 }
@@ -271,7 +365,9 @@ sub process_common {
 #####################
 # select host for client
 sub select_host {
-    my ($self, $alias, $uid, $args) = @_;
+    my ($self, $alias, $uidgid, $args) = @_;
+    my ($uid, $gid) = split(/:/, $uidgid);
+    $gid = -1 if (!defined $gid);
     # set client_ip for logging and load function
     $load_vars{client_ip} = $self->{server}->{peeraddr};
     my $last = $alias =~ s/$conf{alias_last}$// ? $conf{alias_last} : "";
@@ -285,6 +381,8 @@ sub select_host {
         my @min_hosts;
         my $min;
         my $time = time;
+        # set gid for load function
+        $load_vars{gid} = $gid;
         # set uid for load function
         $load_vars{uid} = $uid;
         # set args for load function
@@ -306,7 +404,7 @@ sub select_host {
             $load_vars{host} = $host;
             my $val = eval($conf{"policy_$alias"});
             $self->log(4,
-                "host $host evaluates to $val for $alias/$uid from $load_vars{client_ip}");
+                "host $host evaluates to $val for $alias/$uidgid from $load_vars{client_ip}");
             if (0 <= $val && (!defined $min || $val < $min)) {
                 @min_hosts = ($host);
                 $min = $val;
@@ -320,7 +418,7 @@ sub select_host {
     }
     $load{"last_$alias\_$uid"} = $return if ($return);
     $self->log(2,
-        "$alias$last/$uid returns \"$return\" to $load_vars{client_ip}");
+        "$alias$last/$uidgid returns \"$return\" to $load_vars{client_ip}");
     print "$return\n";
 }
 
@@ -353,142 +451,108 @@ sub stats {
     my $t;
     my $now = time;
     my $week = 60 * 60 * 24 * 7;
+    my %uids;
+    my %gids;
+    my %ips;
 
     while (<STDIN>) {
-        if (/(.*)\s+\S+\s+$conf{syslog_ident}.*\s+([-\w]+)\/(\d+)\s+returns\s+"([^"]*)"\s+to\s+(\S+)/) {
-            my ($time, $alias, $uid, $hosts, $src) = ($1, $2, $3, $4, $5);
+        if (/(.*)\s+\S+\s+$conf{syslog_ident}.*\s+([\w-]+)\/([\d:]+)\s+returns\s+"([^"]*)"\s+to\s+(\S+)/) {
+            my ($time, $alias, $uidgid, $hosts, $src) =
+                ($1, $2, $3, $4, $5);
+            my ($uid, $gid) = split(/:/, $uidgid);
+            $gid = -1 if (!defined $gid);
             my $secs = Date::Parse::str2time($time);
             next if ($now - $secs > $week);
             my @date = localtime($secs);
             my $day = sprintf("%02d", $date[4] + 1) . "/" .
                 sprintf("%02d", $date[3]) . "/" .
                 sprintf("%02d", $date[5] % 100);
-            my $tmp = gethostbyaddr(inet_aton($src), AF_INET);
-            $src = $tmp if ($tmp);
-            $all{"day:$day src:$src uid:$uid"}++;
-            $all{"day:$day uid:$uid"}++;
-            $all{"src:$src uid:$uid"}++;
-            $all{"uid:$uid"}++;
-            $all{"day:$day"} = 1;
-            $all{"src:$src"} = 1;
-            $hosts = "none" if (!$hosts);
-            foreach my $dst (split(/\s+/, $hosts)) {
-                $all{"dst:$dst"} = 1;
-                $all{"day:$day dst:$dst"}++;
+
+            my $tmp = $ips{$src};
+            if (!defined $tmp) {
+                $tmp = gethostbyaddr(inet_aton($src), AF_INET);
+                $src = $tmp if ($tmp);
+                # cache host names
+                $ips{$src} = $src;
+            } else {
+                $src = $tmp;
             }
+
+            $tmp = $uids{$uid};
+            if (!defined $tmp) {
+                $tmp = getpwuid($uid);
+                $uid = $tmp if ($tmp);
+                # cache user names
+                $uids{$uid} = $uid;
+            } else {
+                $uid = $tmp;
+            }
+
+            $tmp = $gids{$gid};
+            if (!defined $tmp) {
+                $tmp = getgrgid($gid);
+                $gid = $tmp if ($tmp);
+                # cache group names
+                $gids{$gid} = $gid;
+            } else {
+                $gid = $tmp;
+            }
+            $hosts = "none" if (!$hosts);
+
+            $all{day}->{$day} = 1;
+            $all{gid}->{$gid}->{$day}++;
+            $all{uid}->{$uid}->{$day}++;
+            $all{src}->{$src}->{$day}++;
+            $all{dst}->{$_}->{$day}++ foreach (split(/\s+/, $hosts));
         }
     }
 
     # set up common header
     my $align = "l";
     my @head = (undef);
-    foreach my $day (sort(map {s/day://; $_} grep(/^day:\S+$/, keys(%all)))) {
+    foreach (sort(keys %{$all{day}})) {
+        push(@head, $_);
         $align .= " | r";
-        push(@head, $day);
     }
     $align .= " | r";
     push(@head, "all");
     my $t;
 
-    #### selections per system ####
-    $head[0] = "system";
-    $t = Text::FormatTable->new($align);
-    $t->head(@head);
+    #### create tables ####
+    my %full = qw(dst system uid user gid group src source);
+    foreach my $type (qw(dst uid gid src)) {
+        $head[0] = $full{$type};
+        $t = Text::FormatTable->new($align);
+        $t->head(@head);
 
-    $t->rule;
-    foreach my $dst (sort(map {s/dst://; $_} grep(/^dst:\S+$/, keys(%all)))) {
-        @row = ($dst);
-        my $total;
-        foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
-            my $dsts;
-            $dsts += $all{$_} foreach (grep(/$day dst:$dst/, keys(%all)));
-            push(@row, defined $dsts ? $dsts : "");
-            $total += $dsts;
+        $t->rule;
+        foreach my $i (sort(keys %{$all{$type}})) {
+            @row = ($i);
+            my $total;
+            foreach my $day (sort(keys %{$all{day}})) {
+                my $calls;
+                $calls += $all{$type}->{$i}->{$day};
+                push(@row, defined $calls ? $calls : "");
+                $total += $calls;
+            }
+            push(@row, defined $total ? $total : "");
+            $t->row(@row);
         }
-        push(@row, defined $total ? $total : "");
-        $t->row(@row);
-    }
 
-    $t->rule;
-    @row = ("\nall (" . scalar(grep(/^dst:\S+$/, keys(%all))). ")");
-    my $total;
-    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
-        my $dsts;
-        $dsts += $all{$_} foreach (grep(/$day dst:/, keys(%all)));
-        push(@row, defined $dsts ? "\n$dsts" : "\n");
-        $total += $dsts;
-    }
-    push(@row, defined $total ? "\n$total" : "\n");
-    $t->row(@row);
-    print "Selections per System\n\n", $t->render, "\n\n";
-
-    #### calls per user ####
-    $head[0] = "user";
-    $t = Text::FormatTable->new($align);
-    $t->head(@head);
-
-    $t->rule;
-    foreach my $user (sort(map
-            {s/uid://; my $u = getpwuid($_); $_ = defined $u ? $u : $_}
-            grep(/^uid:\S+$/, keys(%all)))) {
-        my $uid = getpwnam($user);
-        $uid = $user if (!defined $uid);
-        @row = ($user);
+        $t->rule;
+        @row = ("\nall (" . scalar(keys %{$all{$type}}) . ")");
         my $total;
-        foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
+        foreach my $day (sort(keys %{$all{day}})) {
             my $calls;
-            $calls += $all{$_} foreach (grep(/$day uid:$uid/, keys(%all)));
-            push(@row, defined $calls ? $calls : "");
+            $calls += $all{$type}->{$_}->{$day} foreach (keys %{$all{$type}});
+            push(@row, defined $calls ? "\n$calls" : "\n");
             $total += $calls;
         }
-        push(@row, defined $total ? $total : "");
+        push(@row, defined $total ? "\n$total" : "\n");
         $t->row(@row);
+        print $type eq 'dst' ? "Selections" : "Calls", " per ",
+            ucfirst($head[0]), "\n\n", $t->render, "\n\n";
     }
-
-    $t->rule;
-    @row = ("\nall (" . scalar(grep(/^uid:\S+$/, keys(%all))). ")");
-    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
-        my $calls;
-        $calls += $all{$_} foreach (grep(/$day uid:/, keys(%all)));
-        push(@row, defined $calls ? "\n$calls" : "\n");
-    }
-    my $calls;
-    $calls += $all{$_} foreach (grep(/^uid:/, keys(%all)));
-    push(@row, defined $calls ? "\n$calls" : "\n");
-    $t->row(@row);
-    print "Calls per User\n\n", $t->render, "\n\n";
-
-    #### calls per source ####
-    $head[0] = "source";
-    $t = Text::FormatTable->new($align);
-    $t->head(@head);
-
-    $t->rule;
-    foreach my $src (sort(map {s/src://; $_} grep(/^src:\S+$/, keys(%all)))) {
-        @row = ($src);
-        my $total;
-        foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
-            my $calls;
-            $calls += $all{$_} foreach (grep(/$day src:$src/, keys(%all)));
-            push(@row, defined $calls ? $calls : "");
-            $total += $calls;
-        }
-        push(@row, defined $total ? $total : "");
-        $t->row(@row);
-    }
-
-    $t->rule;
-    @row = ("\nall (" . scalar(grep(/^src:\S+$/, keys(%all))). ")");
-    my $total;
-    foreach my $day (sort(grep(/^day:\S+$/, keys(%all)))) {
-        my $calls;
-        $calls += $all{$_} foreach (grep(/$day uid:/, keys(%all)));
-        push(@row, defined $calls ? "\n$calls" : "\n");
-        $total += $calls;
-    }
-    push(@row, defined $total ? "\n$total" : "\n");
-    $t->row(@row);
-    print "Calls per Source\n\n", $t->render, "\n\n";
     exit;
 }
 
@@ -905,7 +969,7 @@ $fatpacked{"Net/Server/Log/Log/Log4perl.pm"} = '#line '.(1+__LINE__).' "'.__FILE
 NET_SERVER_LOG_LOG_LOG4PERL
 
 $fatpacked{"Net/Server/Log/Sys/Syslog.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'NET_SERVER_LOG_SYS_SYSLOG';
-  package Net::Server::Log::Sys::Syslog;use strict;use warnings;use Sys::Syslog qw(setlogsock openlog syslog);;our%syslog_map=(0=>'err',1=>'warning',2=>'notice',3=>'info',4=>'debug');sub initialize {my ($class,$server)=@_;my$prop=$server->{'server'};$server->configure({syslog_logsock=>\$prop->{'syslog_logsock'},syslog_ident=>\$prop->{'syslog_ident'},syslog_logopt=>\$prop->{'syslog_logopt'},syslog_facility=>\$prop->{'syslog_facility'},});if (ref($prop->{'syslog_logsock'})eq 'ARRAY'){}else {if (!defined$prop->{'syslog_logsock'}){$prop->{'syslog_logsock'}=($Sys::Syslog::VERSION < 0.15)? 'unix' : ''}if ($prop->{'syslog_logsock'}=~ /^(|native|tcp|udp|unix|inet|stream|console)$/){$prop->{'syslog_logsock'}=$1}else {$prop->{'syslog_logsock'}=($Sys::Syslog::VERSION < 0.15)? 'unix' : ''}}my$ident=defined($prop->{'syslog_ident'})? $prop->{'syslog_ident'}: 'net_server';$prop->{'syslog_ident'}=($ident =~ /^([\ -~]+)$/)? $1 : 'net_server';my$opt=defined($prop->{'syslog_logopt'})? $prop->{'syslog_logopt'}: $Sys::Syslog::VERSION ge '0.15' ? 'pid,nofatal' : 'pid';$prop->{'syslog_logopt'}=($opt =~ /^( (?: (?:cons|ndelay|nowait|pid|nofatal) (?:$|[,|]) )* )/x)? $1 : 'pid';my$fac=defined($prop->{'syslog_facility'})? $prop->{'syslog_facility'}: 'daemon';$prop->{'syslog_facility'}=($fac =~ /^((\w+)($|\|))*/)? $1 : 'daemon';if ($prop->{'syslog_logsock'}){setlogsock($prop->{'syslog_logsock'})|| die "Syslog err [$!]"}if (!openlog($prop->{'syslog_ident'},$prop->{'syslog_logopt'},$prop->{'syslog_facility'})){die "Couldn't open syslog [$!]" if$prop->{'syslog_logopt'}ne 'ndelay'}return sub {my ($level,$msg)=@_;$level=$syslog_map{$level}|| $level if$level =~ /^\d+$/;syslog($level,'%s',$msg)}}sub handle_log_error {my ($class,$server,$err,$info)=@_;return$server->handle_syslog_error($err,$info)}1;
+  package Net::Server::Log::Sys::Syslog;use strict;use warnings;use Sys::Syslog qw(setlogsock openlog syslog);;our%syslog_map=(0=>'err',1=>'warning',2=>'notice',3=>'info',4=>'debug');sub initialize {my ($class,$server)=@_;my$prop=$server->{'server'};$server->configure({syslog_logsock=>\$prop->{'syslog_logsock'},syslog_ident=>\$prop->{'syslog_ident'},syslog_logopt=>\$prop->{'syslog_logopt'},syslog_facility=>\$prop->{'syslog_facility'},});if (ref($prop->{'syslog_logsock'})eq 'ARRAY'){}else {if (!defined$prop->{'syslog_logsock'}){$prop->{'syslog_logsock'}=($Sys::Syslog::VERSION lt 0.15)? 'unix' : ''}if ($prop->{'syslog_logsock'}=~ /^(|native|tcp|udp|unix|inet|stream|console)$/){$prop->{'syslog_logsock'}=$1}else {$prop->{'syslog_logsock'}=($Sys::Syslog::VERSION lt 0.15)? 'unix' : ''}}my$ident=defined($prop->{'syslog_ident'})? $prop->{'syslog_ident'}: 'net_server';$prop->{'syslog_ident'}=($ident =~ /^([\ -~]+)$/)? $1 : 'net_server';my$opt=defined($prop->{'syslog_logopt'})? $prop->{'syslog_logopt'}: $Sys::Syslog::VERSION ge '0.15' ? 'pid,nofatal' : 'pid';$prop->{'syslog_logopt'}=($opt =~ /^( (?: (?:cons|ndelay|nowait|pid|nofatal) (?:$|[,|]) )* )/x)? $1 : 'pid';my$fac=defined($prop->{'syslog_facility'})? $prop->{'syslog_facility'}: 'daemon';$prop->{'syslog_facility'}=($fac =~ /^((\w+)($|\|))*/)? $1 : 'daemon';if ($prop->{'syslog_logsock'}){setlogsock($prop->{'syslog_logsock'})|| die "Syslog err [$!]"}if (!openlog($prop->{'syslog_ident'},$prop->{'syslog_logopt'},$prop->{'syslog_facility'})){die "Couldn't open syslog [$!]" if$prop->{'syslog_logopt'}ne 'ndelay'}return sub {my ($level,$msg)=@_;$level=$syslog_map{$level}|| $level if$level =~ /^\d+$/;syslog($level,'%s',$msg)}}sub handle_log_error {my ($class,$server,$err,$info)=@_;return$server->handle_syslog_error($err,$info)}1;
 NET_SERVER_LOG_SYS_SYSLOG
 
 $fatpacked{"Net/Server/MultiType.pm"} = '#line '.(1+__LINE__).' "'.__FILE__."\"\n".<<'NET_SERVER_MULTITYPE';

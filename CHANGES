@@ -56,3 +56,11 @@ CHANGES
 * Ballast 2.1 (05/02/18)
     - Added abort on read/write errors to built-in relay
     - Added relay_buffer config option to control i/o size of built-in relay
+
+* Ballast 2.2 (02/25/19)
+    - Added --jsondump to dump stats in JSON format (contribution by B. Roose)
+    - Added systemd service config for ballastd (contribution by B. Roose)
+    - Added use_ip_address config option to reference hosts by IP
+        address instead of host name (contribution by B. Roose)
+    - Added user_gid variable for use in balancing policies (github issue #4)
+    - Changed stats generation for better performance with large log files

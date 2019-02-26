@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright (C) 2010-2018 United States Government as represented by the
+# Copyright (C) 2010-2019 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration
 # (NASA).  All Rights Reserved.
 #
@@ -41,7 +41,7 @@ use IO::Select;
 use IO::Socket;
 use IO::Socket::INET;
 
-our $VERSION = 0.21;
+our $VERSION = 0.22;
 
 # default configuration
 my %conf = (
@@ -105,7 +105,7 @@ if ($conf{"hosts_$alias"}) {
                 if ($sock) {
                     print $sock $alias;
                     print $sock $conf{alias_last} if ($last);
-                    print $sock " $<";
+                    print $sock " $<:", $( + 0;
                     print $sock " " . join(" ", @ARGV) if (scalar(@ARGV) > 0);
                     print $sock "\n";
                     $host = <$sock>;
