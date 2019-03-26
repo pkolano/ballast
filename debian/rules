@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	dh_auto_build
+	cp etc/ballastrc etc/ballastrc.example
+
+# Don't start services by default
+override_dh_systemd_enable:
+	dh_systemd_enable --no-enable
+
+override_dh_systemd_start:
+	dh_systemd_start --restart-after-upgrade

@@ -1,0 +1,7 @@
+debian/ballast-agent.service /lib/systemd/system
+debian/ballast-agent.timer   /lib/systemd/system
+etc/ballastrc.example /etc
+etc/systemd/system /lib/systemd
+perl/ballast       /usr/bin
+perl/ballast-agent /usr/sbin
+perl/ballastd      /usr/sbin

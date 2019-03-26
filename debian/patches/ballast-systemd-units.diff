@@ -1,0 +1,29 @@
+Description: Make systemd units friendly to packaging
+Author: Jonathon Fernyhough <jonathon.fernyhough@york.ac.uk>
+
+--- i/etc/systemd/system/ballast.service
++++ w/etc/systemd/system/ballast.service
+@@ -1,10 +1,10 @@
+ [Unit]
+ Description=NASA Ballast server
+ After=network.target auditd.service
+-ConditionPathExists=!/etc/ballastd_not_to_be_run
++ConditionPathExists=/etc/ballastrc
+ 
+ [Service]
+-ExecStart=/usr/local/sbin/ballastd
++ExecStart=/usr/sbin/ballastd
+ Type=forking
+ PIDFile=/var/run/ballastd.pid
+ ExecReload=/bin/kill -HUP $MAINPID
+--- i/etc/systemd/system/ballast.socket
++++ w/etc/systemd/system/ballast.socket
+@@ -2,7 +2,7 @@
+ Description=NASA Ballast server socket
+ Before=ballast.service
+ Conflicts=ballast.service
+-ConditionPathExists=!/etc/ballastd_not_to_be_run
++ConditionPathExists=/etc/ballastrc
+ 
+ [Socket]
+ ListenStream=4411
