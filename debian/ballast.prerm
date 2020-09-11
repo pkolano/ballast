@@ -1,0 +1,6 @@
+#!/bin/sh
+libdir=/var/lib/ballast
+
+if dpkg-statoverride --list "$libdir" >/dev/null 2>&1; then
+	dpkg-statoverride --remove "$libdir"
+fi

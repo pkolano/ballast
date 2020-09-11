@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Ballast agent approximately every minute
+ConditionPathExists=/etc/ballastrc
+Wants=network.target
+Requires=ballast-agent.service
+
+[Timer]
+OnUnitActiveSec=50
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target
