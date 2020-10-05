@@ -45,7 +45,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define VERSION "2.2"
+#define VERSION "2.3"
 
 #ifndef CONF_FILE
 #define CONF_FILE "/etc/ballastrc"
@@ -88,7 +88,7 @@ void putconf(char *string) {
     key = strsep(&key, " \t");
     if (key == NULL) return;
     // allocate memory and assign value
-    if (conf = realloc(conf, (nconf + 1) * sizeof(char *)))
+    if ((conf = realloc(conf, (nconf + 1) * sizeof(char *))))
         conf[nconf++] = key;
 }
 

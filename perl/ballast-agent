@@ -44,7 +44,7 @@ use POSIX qw(setgid setuid);
 use Storable qw(nfreeze);
 use Sys::Hostname;
 
-our $VERSION = 0.22;
+our $VERSION = 0.23;
 
 my %conf = (
     conf_file => "/etc/ballastrc",
@@ -94,6 +94,64 @@ if (-e $conf{key_file}) {
     $conf{-cbc} = Crypt::CBC->new(%cbc);
 }
 
+# sleep random amount of time
+if ($conf{random_wait} > 0) {
+    sleep int(rand($conf{random_wait}));
+}
+
+my %load;
+# collect per user load (before dropping privilege so can read /proc/pid/io)
+if ($conf{user_load}) {
+    foreach my $file (glob("/proc/[0-9]*/stat")) {
+        open(FILE, $file) or next;
+        my $line = <FILE>;
+        close FILE;
+        my @cols = split(/\s+/, $line);
+        my $pid = $cols[0];
+        my @stat = stat "/proc/$pid";
+        my $cmd = $cols[1];
+        $cmd =~ s/\s+|[{}()]//g;
+
+        # ignore root processes that are not sshd or dropbear
+        next if ($stat[4] == 0 && $cmd !~ /^(?:sshd|dropbear)$/);
+
+        my $proc = "cmd:$cmd";
+        $proc .= " cpu:" . ($cols[13] + $cols[14]);
+        $proc .= " gid:$stat[5]";
+        $proc .= " mem:$cols[22]";
+        $proc .= " ram:$cols[23]";
+        $proc .= " pid:$pid";
+        $proc .= " ppid:$cols[3]";
+        $proc .= " time:" .
+            ($load{time} - $load{boot_time} - int($cols[21] / 100));
+        $proc .= " uid:$stat[4]";
+
+        # collect per user i/o load if available
+        # (agent must run as root to access this info)
+        if ($> == 0 && open(FILE, "/proc/$pid/io")) {
+            my ($bytes, $ops);
+            while (my $line = <FILE>) {
+                if ($line =~ /^rchar:\s*(\d+)/) {
+                    $proc .= " io_read_bytes:$1";
+                    $bytes += $1;
+                } elsif ($line =~ /^wchar:\s*(\d+)/) {
+                    $proc .= " io_write_bytes:$1";
+                    $bytes += $1;
+                } elsif ($line =~ /^syscr:\s*(\d+)/) {
+                    $proc .= " io_reads:$1";
+                    $ops += $1;
+                } elsif ($line =~ /^syscw:\s*(\d+)/) {
+                    $proc .= " io_writes:$1";
+                    $ops += $1;
+                }
+            }
+            $proc .= " io_ops:$ops";
+            $proc .= " io_bytes:$bytes";
+        }
+        $load{"pid_$pid"} = $proc;
+    }
+}
+
 # change group and/or user if specified
 if ($conf{run_group}) {
     my $gid = getgrnam($conf{run_group});
@@ -108,12 +166,6 @@ if ($conf{run_user}) {
         if (!defined $uid || $< != $uid || $> != $uid);
 }
 
-# sleep random amount of time
-if ($conf{random_wait} > 0) {
-    sleep int(rand($conf{random_wait}));
-}
-
-my %load;
 $load{alias} = $conf{data_alias};
 $load{host} = (gethostbyname(hostname))[0];
 
@@ -216,57 +268,6 @@ if (open(FILE, "/proc/vmstat")) {
         $load{d_swap_out} += $1 if ($line =~ /^pswpout\s+(\d+)/);
     }
     close FILE;
-}
-
-# collect per user load if specified
-if ($conf{user_load}) {
-    foreach my $file (glob("/proc/[0-9]*/stat")) {
-        open(FILE, $file) or next;
-        my $line = <FILE>;
-        close FILE;
-        my @cols = split(/\s+/, $line);
-        my $pid = $cols[0];
-        my @stat = stat "/proc/$pid";
-        my $cmd = $cols[1];
-        $cmd =~ s/\s+|[{}()]//g;
-
-        # ignore root processes that are not sshd or dropbear
-        next if ($stat[4] == 0 && $cmd !~ /^(?:sshd|dropbear)$/);
-
-        my $proc = "cmd:$cmd";
-        $proc .= " cpu:" . ($cols[13] + $cols[14]);
-        $proc .= " gid:$stat[5]";
-        $proc .= " mem:$cols[22]";
-        $proc .= " ram:$cols[23]";
-        $proc .= " pid:$pid";
-        $proc .= " ppid:$cols[3]";
-        $proc .= " time:" .
-            ($load{time} - $load{boot_time} - int($cols[21] / 100));
-        $proc .= " uid:$stat[4]";
-
-        # collect per user i/o load if available
-        if (open(FILE, "/proc/$pid/io")) {
-            my ($bytes, $ops);
-            while (my $line = <FILE>) {
-                if ($line =~ /^rchar:\s*(\d+)/) {
-                    $proc .= " io_read_bytes:$1";
-                    $bytes += $1;
-                } elsif ($line =~ /^wchar:\s*(\d+)/) {
-                    $proc .= " io_write_bytes:$1";
-                    $bytes += $1;
-                } elsif ($line =~ /^syscr:\s*(\d+)/) {
-                    $proc .= " io_reads:$1";
-                    $ops += $1;
-                } elsif ($line =~ /^syscw:\s*(\d+)/) {
-                    $proc .= " io_writes:$1";
-                    $ops += $1;
-                }
-            }
-            $proc .= " io_ops:$ops";
-            $proc .= " io_bytes:$bytes";
-        }
-        $load{"pid_$pid"} = $proc;
-    }
 }
 
 # untaint PATH

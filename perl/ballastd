@@ -52,7 +52,7 @@ use Socket;
 use Storable qw(thaw);
 require Text::FormatTable;
 
-our $VERSION = 0.22;
+our $VERSION = 0.23;
 
 # default configuration
 my %conf = (
@@ -63,6 +63,7 @@ my %conf = (
     data_timeout => 2,
     host_timeout => 180,
     key_file => "/etc/ballast.key",
+    pid_file => "/var/run/ballastd.pid",
     run_setsid => 1,
     syslog_facility => "syslog",
     syslog_ident => "ballast",

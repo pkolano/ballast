@@ -40,7 +40,7 @@
 ########################
 
 # host name(s) and/or IP address(es) of Ballast server(s)
-data_host myserver1 myserver2
+data_host localhost
 
 
 ########################
@@ -113,7 +113,6 @@ alias_domain .example.com
 #   (form is hosts_X where X is the name of an alias)
 #   (this can be a subset of the actual hosts for each alias)
 hosts_foo foo1 foo2 foo3
-hosts_bar bar1 bar2
 
 # size of buffer to use in built-in relay
 #relay_buffer 1048576
@@ -141,7 +140,6 @@ data_db /var/lib/ballast/ballast.db
 #     against data collected from any agents that have data_alias set
 #     to either "foo" or "bar")
 #data_alias_foo foo
-#data_alias_bar bar
 
 # time in seconds to wait for agent data before host considered down
 #host_timeout 180
@@ -154,12 +152,11 @@ data_db /var/lib/ballast/ballast.db
 #log_level 2
 
 # location of pid file
-#pid_file nodefault
+#pid_file /var/run/ballastd.pid
 
 # policy expression to be evaluated across all hosts
 #   (form is policy_X where X is the name of an alias)
 policy_foo cpu * ram * io_sectors * net_bytes
-policy_bar load_5
 
 # maximum number of child forks active at any given time
 #run_fork_max nodefault
