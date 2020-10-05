@@ -1,5 +1,6 @@
 [Unit]
 Description=Run Ballast agent approximately every minute
+ConditionPathExists=!/etc/ballast-agent_not_to_be_run
 ConditionPathExists=/etc/ballastrc
 Wants=network.target
 Requires=ballast-agent.service

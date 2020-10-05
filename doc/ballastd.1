@@ -1,0 +1,275 @@
+.TH "ballastd" "1" "21 Sept 2020" "" ""
+./"################################################################
+.SH "NAME"
+./"################################################################
+\fBballastd\fP \(em the server component of the Ballast load balancer
+./"################################################################
+.SH "SYNOPSIS"
+./"################################################################
+.nf
+\fBballastd\fP [-c FILE]
+.fi
+.PP
+.RS
+Run the Ballast server, which is contacted by Ballast clients to make
+balancing decisions and by Ballast agents to report system load.  A
+configuration FILE other than the system default may be specified, if
+desired.
+.RE
+.PP
+.nf
+\fBballastd\fP [-c FILE] --dump [REGEX]
+\fBballastd\fP [-c FILE] --jsondump [REGEX]
+.PP
+.RS
+Dump the contents of the load database as "key = value" pairs or JSON
+"key:subkey:value" objects.  An optional regular expression in Perl
+format (see perlre(1)) can be used to filter the output.
+.RE
+.PP
+.nf
+\fBballastd\fP [-c FILE] --stats
+.fi
+.PP
+.RS
+Produce a set of tables with stats on selections per system, calls per
+user, and calls per source.  This command must be fed an appropriate
+syslog stream on stdin.
+.RE
+./"################################################################
+.SH "DESCRIPTION"
+./"################################################################
+The ballastd program is invoked for three purposes.  The main purpose
+is to start the Ballast server that services client balancing requests
+and ingests system load data provided by agents.  It is also used to
+dump the server database and view usage stats.
+./"================================================================
+.SS "Running The Server"
+./"================================================================
+Prior to running the server, consult ballastrc(5) and configure server
+items as needed.  The main items of interest are "data_db", which
+specifies the location of the database, "policy_X", which specifies the
+balancing policy for alias X, and "key_file", which specifies the
+location of the key to secure communication between server and agents.
+It is strongly recommended to create a key file to secure the integrity
+and privacy of the load data.  Make sure that the user and/or group
+specified with the "run_user" and "run_group" settings have write access
+to the paths associated with the "pid_file" and "data_db" settings, if
+specified.
+.PP
+Once the server has been configured, it should be set up to start
+at boot.  On a systemd host, the ballast service can be enabled
+(ensure .service and .socket files have been installed per installation
+document) using:
+.PP
+.RS
+.nf
+systemctl enable ballast
+.fi
+.RE
+.PP
+Alternatively, for non-systemd hosts, an appropriate /etc/init.d script
+and /etc/rc*.d links must be created.  In this script, the server can
+simply be invoked as:
+.PP
+.RS
+.nf
+/usr/local/sbin/ballastd
+.fi
+.RE
+.PP
+Note that the server runs with Perl taint mode enabled (see perlsec(1))
+so if encrypted communication is enabled, a cipher X other than
+"XXTEA_PP" is used, and the corresponding Crypt::X module is installed
+in a non-standard location (i.e. not listed in @INC by "perl -V"), then
+the server must be invoked using:
+.PP
+.RS
+.nf
+perl -T -I/module/location /usr/local/sbin/ballastd
+.fi
+.RE
+.PP
+To start the server manually via systemd, use:
+.PP
+.RS
+.nf
+systemctl start ballast
+.fi
+.RE
+.PP
+To start via SysV init, use:
+.PP
+.RS
+.nf
+/etc/init.d/ballastd start
+.fi
+.RE
+.PP
+To start directly, use:
+.PP
+.RS
+.nf
+/usr/local/sbin/ballastd
+.fi
+.RE
+.PP
+with the same Perl taint mode caveat as mentioned above.
+.PP
+The server configuration can be reloaded on-the-fly by sending the HUP
+signal to the ballastd process.  Note that the "data_port" setting
+cannot be modified in this manner and will crash the server if
+attempted.  Stop and restart to change this value.
+./"================================================================
+.SS "Dumping The Database"
+./"================================================================
+The ballastd --dump and --jsondump options can be used to dump the load
+information stored in the server's database as "key = value" pairs or
+JSON "key:subkey:value" objects.  An optional regular expression in Perl
+format (see perlre(1)) can be used to filter the output.  For example,
+to see all load information associated with a host "foo1" in "key =
+value" format, the following command can be issued:
+.PP
+.RS
+.nf
+ballastd --dump foo1:
+.fi
+.RE
+.PP
+To see all data as JSON "key:subkey:value" objects:
+.PP
+.RS
+.nf
+ballastd --jsondump
+.fi
+.RE
+.PP
+To see all hosts for which data is collected:
+.PP
+.RS
+.nf
+ballastd --dump host
+.fi
+.RE
+.PP
+To see last time data was updated for each host:
+.PP
+.RS
+.nf
+ballastd --dump :time
+.fi
+.RE
+.PP
+Some values are computed on the fly so will not be listed in the
+database.  These include "client_ip", "random", "user_*", and "*_rank"
+(see ballastrc(5) for descriptions of these items).
+./"================================================================
+.SS "Viewing Usage Stats"
+./"================================================================
+To view historical tables of selections per system, calls per user,
+and calls per source, Ballast logs can be piped into ballastd with the
+--stats option.  This functionality is only available if the "log_file"
+setting is configured and "log_level" is set to 2 or higher (see
+ballastrc(5)).  For example, if "log_file" is set to "Sys::Syslog", the
+following can be used to view the stats from the current logging period
+(which will depend on syslog configuration):
+.PP
+.RS
+.nf
+ballastd --stats </var/log/syslog
+.fi
+.RE
+.PP
+Log entries from other services will be ignored in the input.  To save
+stats periodically to a file, a cron job may be used.  For example, if
+the previous day's syslog entry is stored in /var/log/syslog.0, the
+following crontab (see crontab(5)) can be used to generate daily stats
+into a directory "/dir":
+.PP
+.RS
+.nf
+# Collect daily Ballast usage stats at 8am and save in /dir
+#   (assumes syslog of previous day in /var/log/syslog.0)
+0 8 * * * /usr/local/sbin/ballastd --stats </var/log/syslog.0 \\
+    >/dir/ballast.`/bin/date +%m.%d.%y`
+.fi
+.RE
+.PP
+Depending on the Ballast and system logging configuration (i.e. where
+the log files go and how accessible they are), it may be possible to run
+this as a non-root user.
+./"################################################################
+.SH "TROUBLESHOOTING"
+./"################################################################
+./"================================================================
+.SS "Ballast chooses different host every invocation"
+./"================================================================
+All servers are down or cannot be contacted so the client has reverted
+to its default randomized strategy.  Check the status of the server(s)
+using "systemctl status ballast" or "ps -ef |grep ballastd".  Restart,
+if necessary, as discussed above in "Running The Server".
+./"================================================================
+.SS "Ballast chooses same host although others less loaded"
+./"================================================================
+Load only changes when agents report in so there can be a gap of a
+couple minutes before a less loaded host is chosen.  If another host has
+clearly had lower load for more than a couple minutes, the agents on
+the other hosts are down or are unable to contact the server(s).  On
+each host, check that the agent has reported in to the server within the
+last five minutes (the server's view of when each host has last reported
+in can be shown by running "ballastd --dump :time" on the server).
+.PP
+If the agent has not reported in, debug on each agent host with the
+following.
+.IP -
+If invoked via cron, check that cron is running and that the agent
+crontab is installed (see ballast-agent(1)).
+.IP -
+If invoked via systemd, check on the status using "systemctl status
+ballast-agent.timer" (see ballast-agent(1)).
+.IP -
+Check that the agent executable "ballast-agent" exists at install
+location (/usr/local/sbin by default).
+.IP -
+Check that the server port 4411 is accessible from the client host.
+.IP -
+Check for execution errors by manually invoking ballast-agent as root
+and examining the output for errors.
+./"================================================================
+.SS "Ballast never chooses particular host"
+./"================================================================
+The agent on that host may be down or unable to contact the server(s).
+See above solution.
+./"================================================================
+.SS "Ballast reports hosts unavailable even though they are not"
+./"================================================================
+The agents on all hosts are down or unable to contact the server(s).
+See above solution.
+./"################################################################
+.SH "EXIT STATUS"
+./"################################################################
+ballastd exits with 0 on success or >0 if an error occurs.
+./"################################################################
+.SH "FILES"
+./"################################################################
+.TP
+/etc/ballastrc
+This file specifies various configuration items including balancing
+policies, logging behavior, invocation details, and communication
+parameters.
+.TP
+/etc/ballast.key
+Default location of the encryption key file that must exist for
+encrypted communication between server and agents.
+.TP
+/var/lib/ballast/ballast.db
+Default location of database file used to store load information.
+./"################################################################
+.SH "AUTHOR"
+./"################################################################
+ballastd was written by Paul Kolano.
+./"################################################################
+.SH "SEE ALSO"
+./"################################################################
+ballast(1), ballast-agent(1), ballastrc(5), crontab(5), perlre(1),
+perlsec(1)

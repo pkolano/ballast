@@ -1,8 +1,9 @@
 [Unit]
 Description=NASA Ballast agent
+ConditionPathExists=!/etc/ballast-agent_not_to_be_run
 ConditionPathExists=/etc/ballastrc
 Wants=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/ballast-agent
+ExecStart=/usr/local/sbin/ballast-agent

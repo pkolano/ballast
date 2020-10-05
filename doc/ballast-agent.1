@@ -1,0 +1,106 @@
+.TH "ballast-agent" "1" "23 Sept 2020" "" ""
+./"################################################################
+.SH "NAME"
+./"################################################################
+\fBballast-agent\fP \(em the agent component of the Ballast load balancer
+./"################################################################
+.SH "SYNOPSIS"
+./"################################################################
+.nf
+\fBballast-agent\fP [-c FILE]
+.fi
+.PP
+.RS
+Run the Ballast agent, which gathers load information from the current
+system and sends it to the Ballast server.  A configuration FILE other
+than the system default may be specified, if desired.
+.RE
+./"################################################################
+.SH "DESCRIPTION"
+./"################################################################
+The ballast-agent program is intended to be invoked periodically by
+cron or by systemd timer to gather load information on the current
+system.  This information is extracted from various locations within the
+/proc file system (see proc(5)) and forwarded to the Ballast server to
+make balancing decisions by applying the load information from all hosts
+against a configured balancing policy.  The system resources consumed by
+the agent during a single run are extremely low (fractions of a CPU
+second) so should have negligible impact on a system when run at the
+recommended frequency of once per minute.  The agent can be customized
+to each environment using an external hook to collect additional
+information.
+.PP
+Prior to running the agent, consult ballastrc(5) and configure agent
+items as needed.  The main items of interest are "data_alias", which
+specifies the alias to which collected data pertains, "data_host",
+which specifies the server host, and "key_file", which specifies the
+location of the key to secure communication between server and agents.
+It is strongly recommended to create a key file to secure the integrity
+and privacy of the load data.  If many agents are scheduled to execute
+at the same time via cron, it is beneficial for agents to wait a random
+amount of time before collecting data to prevent large usage spikes in
+the server.  This can be achieved with the "random_wait" setting.  The
+"load_hook" setting can be used to collect custom load information.
+.PP
+Once the agent has been configured, it should be set up to run
+periodically.  On a systemd host, the agent can be enabled via timer
+(ensure .service and .timer files have been installed per installation
+document) using:
+.PP
+.RS
+.nf
+systemctl enable ballast-agent.timer
+.fi
+.RE
+.PP
+Alternatively, or for non-systemd hosts, a cron job may be used.  For
+example, the following root crontab (see crontab(5)) can be used to
+invoke the agent every minute:
+.PP
+.RS
+.nf
+# collect load information every minute
+* * * * * /usr/local/sbin/ballast-agent >/dev/null 2>&1
+.fi
+.RE
+.PP
+During the invocation, the "run_user" setting (see ballastrc(5)) will
+determine the user utilized for the bulk of the processing after the
+agent reads the "key_file" contents and per user /proc information that
+would otherwise not be accessible.
+.PP
+Also note that the agent runs with Perl taint mode enabled (see
+perlsec(1)) so if encrypted communication is enabled, a cipher X other
+than "XXTEA_PP" is used, and the corresponding Crypt::X module is
+installed in a non-standard location (i.e. not listed in @INC by "perl
+-V"), then the agent must be invoked using:
+.PP
+.RS
+.nf
+perl -T -I/module/location /usr/local/sbin/ballast-agent
+.fi
+.RE
+./"################################################################
+.SH "EXIT STATUS"
+./"################################################################
+ballast-agent exits with 0 on success or >0 if an error occurs.  See
+ballastd(1) for troubleshooting.
+./"################################################################
+.SH "FILES"
+./"################################################################
+.TP
+/etc/ballastrc
+This file specifies various configuration items including custom load
+collection, invocation details, and server communication parameters.
+.TP
+/etc/ballast.key
+Default location of the encryption key file that must exist for
+encrypted communication between server and agents.
+./"################################################################
+.SH "AUTHOR"
+./"################################################################
+ballast-agent was written by Paul Kolano.
+./"################################################################
+.SH "SEE ALSO"
+./"################################################################
+ballast(1), ballastd(1), ballastrc(5), crontab(5), perlsec(1), proc(5)

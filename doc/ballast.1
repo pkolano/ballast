@@ -1,0 +1,221 @@
+.TH "ballast" "1" "21 Sept 2020" "" ""
+./"################################################################
+.SH "NAME"
+./"################################################################
+\fBballast\fP \(em a lightweight SSH load balancer with user-specific
+policies
+./"################################################################
+.SH "SYNOPSIS"
+./"################################################################
+.nf
+\fBballast\fP [-c FILE] ALIAS [ARGUMENT...]
+.fi
+.PP
+.RS
+Obtain the least-loaded host associated with a configured ALIAS (and
+any optional ARGUMENTs it takes) from the Ballast server and connect to
+it using the configured relay.  A configuration FILE other than the
+system default may be specified, if desired.
+.RE
+.PP
+.nf
+\fBballast\fP [-c FILE] -l ALIAS [ARGUMENT...]
+.fi
+.PP
+.RS
+List the obtained host without connecting to it.
+.RE
+./"################################################################
+.SH "DESCRIPTION"
+./"################################################################
+Ballast is a framework that was specifically designed for SSH load
+balancing by taking advantage of the aliasing and proxying capabilities
+available in most SSH clients.  Within a traditional SSH bastion
+architecture, where internal resources can only be accessed from the
+outside via a hardened bastion system, Ballast is completely transparent
+to users and does not require any external modifications.  Bastions and
+internal hosts must have the Ballast client installed, which can be
+easily managed across internal hosts by configuration management tools.
+.PP
+Ballast consists of a Ballast agent on each balanced host, a Ballast
+server on one or more data servers, and a Ballast client on each bastion
+and internal host from which the user might access balanced hosts.  The
+Ballast agent periodically collects system load information and sends it
+to the Ballast server.  The server aggregates the load data received
+from all agents and stores it in a suitable form for making balancing
+decisions.  When the user invokes SSH to a host alias designated for
+balancing, SSH triggers the Ballast client, which contacts the server to
+resolve balancing aliases to actual balanced host names.  The server
+consults its data and returns one or more hosts, one of which the client
+connects to via a built-in TCP relay (or external equivalent such as
+netcat), after which the login proceeds normally.
+.PP
+Unlike traditional load balancers, Ballast has the ability to adjust
+its balancing strategy based on the invoking user.  By tailoring system
+selections specifically to each individual user, the utility to each
+user can be maximized instead of choosing a system that may be best
+according to a common metric, but not ideal for the user's needs.
+.PP
+Prior to running the client, consult ballastrc(5) and configure client
+items as needed.  The main items of interest are "alias_domain", which
+specifies the domain for which aliases are relevant, "data_host", which
+specifies the server host, and "hosts_X", which specifies the default
+set of hosts for each alias when the server cannot be contacted.  The C
+client also requires the "relay_path" setting, which is the path to a
+TCP relay.
+./"################################################################
+.SH "SSH BALANCING"
+./"################################################################
+The Ballast client is intended for use on bastion and internal hosts.
+Users need only know the defined balancing aliases.  To connect via ssh
+to a given alias, the user simply invokes ssh to that alias.  For
+example:
+.PP
+.RS
+.nf
+ssh foo
+.fi
+.RE
+.PP
+would connect to one of the hosts associated with alias "foo".  To
+connect to the last host the user connected to via the balancer, the
+user can append "-last" to the alias name.  For example:
+.PP
+.RS
+.nf
+ssh foo-last
+.fi
+.RE
+.PP
+would connect to the last host returned to the user for alias "foo".
+Note that this suffix is configurable (see "alias_last" in
+ballastrc(5)).
+./"================================================================
+.SS "SSH Configuration For Internal Hosts"
+./"================================================================
+To invoke ballast transparently, each client system must have an entry
+for each balancing alias in either the global /etc/ssh/ssh_config
+applicable to all users or in the per-user ~/.ssh/config.  The following
+shows the relevant configuration for an alias "foo" in domain
+"example.com":
+.PP
+.RS
+.nf
+# Aliases for least loaded and last utilized system
+Host foo foo-last foo.example.com foo-last.example.com
+
+    # Use the balancer when connecting to these aliases
+    ProxyCommand /usr/local/bin/ballast %h
+
+    # Avoids host key checks for all variants when
+    # StrictHostKeyChecking is enabled (optional)
+    HostKeyAlias foo1.example.com
+.fi
+.RE
+.PP
+A similar configuration must be defined for each alias in use (see
+"hosts_X" in ballastrc(5)).  Note that "example.com" must match the
+value of the configured domain (see "alias_domain" in ballastrc(5)) and
+"-last" must match the configured last chosen host suffix if it differs
+from the default (see "alias_last" in ballastrc(5)).  Also note that
+if additional arguments are used in a balancing policy (see "arg0,
+arg1, ... argN" in ballastrc(5)), the desired arguments can be placed after
+the "%h" in the ProxyCommand setting.
+./"================================================================
+.SS "SSH Configuration For External Hosts Via Bastion"
+./"================================================================
+While the client can be used directly from beyond an organization's
+perimeter (assuming the server's listening port is accessible), client
+requests to the server are unencrypted so are subject to modification if
+an attacker has control of the network along the path from client to
+server.  The danger of this scenario is a modified return value from the
+server that directs the client to connect to a host under the control of
+the attacker, which can then be used to harvest user passwords.  SSH
+host key checks, however, should prevent the user from accessing
+unexpected hosts as long as the user has a key for each alias in
+~/.ssh/known_hosts (through either a previous connection or manual
+entry).
+.PP
+External clients can still effectively connect to load-balanced hosts
+using appropriate SSH configuration through a bastion host.  Assuming a
+bastion "bastion.example.com" that has Ballast installed and
+configured, the following can be added to a user's ~/.ssh/config to
+invoke ballast remotely:
+.PP
+.RS
+.nf
+# Aliases for least loaded and last utilized system
+Host foo foo-last foo.example.com foo-last.example.com
+
+    # Use the balancer on the bastion for these aliases
+    ProxyCommand ssh bastion.example.com /usr/local/bin/ballast %h
+
+    # Avoids host key checks for all variants when
+    # StrictHostKeyChecking is enabled (optional)
+    HostKeyAlias foo1.example.com
+.fi
+.RE
+.PP
+This configuration can also be used globally in /etc/ssh/ssh_config if
+an external system has many remote users.  Note that the Ballast client
+can be used as a general-purpose replacement for TCP relays like netcat
+on external systems even for systems that do not correspond to balancing
+aliases.
+./"################################################################
+.SH "GENERAL-PURPOSE BALANCING"
+./"################################################################
+To list the host that would have been selected for the user, the
+client can be invoked directly with a -l option and the chosen alias.
+For example:
+.PP
+.RS
+.nf
+ballast -l foo
+.fi
+.RE
+.PP
+would print the host that has been selected for alias "foo" to the
+terminal instead of connecting to it.  This functionality allows Ballast
+to act as a general-purpose load balancing solution beyond just SSH.
+This functionality is also useful for testing purposes.
+.PP
+Additional arguments can be given to the Ballast client that will
+correspond to arg0...argN in policy definitions.  For example:
+.PP
+.RS
+.nf
+ballast -l foo bar baz
+.fi
+.RE
+.PP
+would print the host that has been selected for alias "foo" when arg0
+is set to "bar" and arg1 is set to "baz" in the corresponding balancing
+policy.
+./"################################################################
+.SH "EXIT STATUS"
+./"################################################################
+ballast exits with 0 on success or >0 if an error occurs.  See
+ballastd(1) for troubleshooting.
+./"################################################################
+.SH "FILES"
+./"################################################################
+.TP
+/etc/ballastrc
+This file specifies various configuration items including alias
+definitions, relay settings, and server communication details.
+.TP
+/etc/ssh/ssh_config and/or ~/.ssh/config
+Global and per-user SSH configuration files where ballast is
+invoked for load balancing.
+.TP
+/etc/ssh/ssh_known_hosts and/or ~/.ssh/known_hosts
+Global and per-user list of known SSH host keys that may be referenced
+during transparent ballast invocation.
+./"################################################################
+.SH "AUTHOR"
+./"################################################################
+ballast was written by Paul Kolano.
+./"################################################################
+.SH "SEE ALSO"
+./"################################################################
+ballast-agent(1), ballastd(1), ballastrc(5), ssh_config(5)

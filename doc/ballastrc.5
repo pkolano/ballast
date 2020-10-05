@@ -1,0 +1,1093 @@
+.TH "ballastrc" "5" "21 Sept 2020" "" ""
+./"################################################################
+.SH "NAME"
+./"################################################################
+\fBballastrc\fP \(em configuration file for Ballast client, server, and
+agent
+./"################################################################
+.SH "DESCRIPTION"
+./"################################################################
+The Ballast configuration file consists of key-value pairs.  Keys are
+the first non-whitespace word on a line with the corresponding value as
+the remaining text after the first whitespace following the key.  Any
+text following the hash character "#" is ignored as a comment.  A
+backslash "\\" may be used as the last non-whitespace character on a
+line to join that line with the one that follows.  The Ballast client,
+server, and agent can all share this file.
+./"################################################################
+.SH "CONFIGURATION ITEMS"
+./"################################################################
+The following subsections show the configuration items that are relevant
+to each of the client, server, and agent.  A subsection denoted "X/Y" is
+relevant to both X and Y.
+./"================================================================
+.SS "Agent/Client/Server Configuration"
+./"================================================================
+.IP data_port
+The TCP port used for server communication.  The default is 4411.
+.IP data_timeout
+The amount of time to wait during server communication.  The default is 2.
+Note that if multiple data servers are defined, the client will
+wait this amount for each.  The client will use the default host set
+(see "hosts_*" in "Client Configuration") if all servers time out.
+./"================================================================
+.SS "Agent/Client Configuration"
+./"================================================================
+.IP data_host
+The host name(s) and/or IP address(es) of the Ballast server(s).
+It can be beneficial to use an IP address instead of a host name for
+this setting to avoid DNS resolver delays and other related issues.
+./"================================================================
+.SS "Client/Server Configuration"
+./"================================================================
+.IP alias_last
+The suffix that triggers the return of the host that was last chosen
+for the given alias/user.  The default is "-last".
+./"================================================================
+.SS "Agent/Server Configuration"
+./"================================================================
+.IP data_cipher
+The cipher that should be used to encrypt data sent to the server.
+The default is "XXTEA_PP", which is embedded in Ballast components.
+For any other cipher X, the Perl module Crypt::X must be installed.
+An example value is "Rijndael" corresponding to the Crypt::Rijndael
+Perl module.
+.IP key_file
+The file containing the encryption key used with the specified cipher.
+The default is "/etc/ballast.key".  This file must exist with the same
+contents on all agent and server hosts to enable encrypted communication
+between them and should only be readable by root.  In both agent and
+server cases, the contents will be read before dropping privilege and
+becoming the "run_user" user.  Creating this file is strongly
+recommended to ensure the integrity and privacy of the load data.  The
+contents may be any text value of suitable length.  
+.IP run_group nogroup
+The group that agent/server will run as.  A typical value would be
+"nogroup".
+.IP run_user nobody
+The user that the agent/server will run as.  A typical value would be
+"nobody".
+./"================================================================
+.SS "Agent Configuration"
+./"================================================================
+.IP data_alias
+The alias to which collected data pertains.  This value is used by the
+server (see "data_alias_*" in "Server Configuration").
+.IP load_hook
+The path of an optional executable called to generate custom load data
+during each cycle.  This program should print whitespace-separated
+key-value pairs to stdout, where the key is an alphanumeric value
+(equivalent to Perl regular expression "\\w+") and the value is any
+text (including spaces).  For example, the following script (if saved to
+a file given as the value of load_hook) would add a custom field
+"tmp_files" that contains the number of top-level items in /tmp, which
+can then be used in balancing policies:
+.PP
+.RS
+.RS
+.nf
+#!/bin/sh
+echo tmp_files `ls -1 /tmp |wc -l`
+.fi
+.RE
+.PP
+Default load information collected by the agent can also be overridden
+using this mechanism, if desired.
+.PP
+To specify differential loads (i.e. load values where the difference
+between consecutive values indicates the load rather than a single
+value), a "d_" prefix should be added to the key name.  For example, to
+specify the number of top-level items in /tmp that have been added since
+the last update, use:
+.PP
+.RS
+.nf
+#!/bin/sh
+echo d_tmp_files `ls -1 /tmp |wc -l`
+.fi
+.RE
+.PP
+Note that this is exactly the same as the previous example except for
+the "d_" prefix, which triggers special processing in the server.  The
+original name "tmp_files" should still be used in policies.
+.PP
+Take care with differential values that may become smaller between two
+iterations (such as the above example).  Ballast considers a host to be
+down if the balancing policy evaluates to a negative number.  Use the
+absolute value function "abs()" or the conditional evaluation operator
+"?:" in policies when custom values may become negative.
+.RE
+.IP random_wait
+The number of seconds to randomly wait before collecting data.  The
+default is 0.  This setting is intended for deployments with many
+agent hosts so they do not all report in at exactly the same time.
+.IP user_load
+Enable collection of user specific information.  The default is 1.
+.IP use_ip_address
+Reference hosts by IP address instead of host name.  This setting is
+intended for deployments among hosts without fully defined DNS
+entries.  The IP address used will be the one with public internet
+access.  If no such IP address is found, the agent will abort.
+./"================================================================
+.SS "Client Configuration"
+./"================================================================
+.IP alias_domain
+Domain for which aliases are relevant.  This value is used to determine
+the equivalence of unqualified and fully-qualified host names.  The
+value must begin with a period ".".  An example value is ".example.com".
+.IP alias_text
+Text that will be displayed when no host is available.  This will
+complete the message "ERROR: all hosts for alias foo are ...").  The
+default is "unavailable".
+.IP hosts_X
+Default set of hosts for each alias when server cannot be contacted.
+The form is "hosts_X" where X is the name of an alias.  This can be a
+subset of the actual hosts for each alias.  For example, for an alias
+"foo", the setting "hosts_foo foo1 foo2 foo3" would specify that a
+random selection among {foo1, foo2, foo3} should be used as a last
+resort when the server is unavailable.  Any balanced host that no longer
+exists should be removed from this setting or else may result in
+errors if the server goes down.
+.IP relay_buffer
+Size of buffer in bytes to use in built-in TCP relay.  The default is
+1048576.  Too small a value will decrease performance as less data will
+be read during each read of the socket while too large a value will
+waste memory.
+.IP relay_path
+Path to external TCP relay.  The C client requires an external program
+such as netcat or tcpconnect.  This setting can be commented out when
+using the Perl client as it has embedded relay functionality.  When
+specified, however, the Perl client will use the given external relay.
+An example value is "/usr/bin/netcat".
+.IP relay_port
+Port used to connect to sshd by TCP relay.  The default is 22.
+./"================================================================
+.SS "Server Configuration"
+./"================================================================
+.IP data_db
+Location of database.  The base directory of the given path must exist,
+but the file will be created if it does not already exist.  The default
+is "/var/lib/ballast/ballast.db".
+.IP data_alias_X
+Use collected data of given alias(es) for load calculations.  The form
+is "data_alias_X" where X is the name of an alias.  For example,
+"data_alias_foo foo bar" would evaluate policies against data
+collected from any agents that have data_alias set to either "foo" or
+"bar".
+.IP host_timeout
+Time in seconds to wait for agent data before host considered down.  The
+default is 180.
+.IP log_file
+Location of log file or the value "Sys::Syslog" to log via syslog.
+This is an optional value that has no default.
+.IP log_level
+Log level from 0 to 4 with 0 disabling logging and 4 being very verbose
+logging.  The default is 2.  Currently, there is only logging at levels
+2 and 4.
+.IP pid_file
+Location of PID file that indicates the server is running.  The
+default is "/var/run/ballastd.pid".  Note that if the value of "PIDFile"
+in the systemd "ballast.service" file is changed, this value must be
+given a matching value to interact properly with systemd.
+.IP policy_X
+Policy expression to be evaluated across all hosts.  The form is
+"policy_X" where X is the name of an alias.  For example: 
+.PP
+.RS
+.RS
+.nf
+policy_foo cpu * ram * io_sectors * net_bytes
+.fi
+.RE
+.PP
+would define the policy for alias "foo" such that the product of CPU
+load, used RAM, I/O activity, and network traffic would be minimized.
+See "LOAD BALANCING POLICIES" for a full description of policy
+expressions.
+.RE
+.IP run_fork_max
+Maximum number of child forks active at any given time.  This is an
+optional value that has no default.
+.IP run_fork_min
+Minimum number of child forks active at any given time.  This is an
+optional value that has no default.
+. IP run_setsid
+Run server in background.  The default is 1.
+.IP syslog_facility syslog
+Syslog facility when log_file is set to "Sys::Syslog".  The default is
+"syslog".
+.IP syslog_ident ballast
+Syslog identifier when log_file is set to "Sys::Syslog".  The default
+is "ballast".
+.IP syslog_logopt
+Syslog log options when log_file is set to "Sys::Syslog".  The default
+is "ndelay,pid".
+.IP tcp_allow
+Regular expression in Perl format (see perlre(1)) to specify which IPs
+are allowed to connect.  This is an optional value that has no default,
+but is recommended if data_port is externally accessible.  An example
+value is "192\\.168\\..*".  If this value is specified, hosts must be
+explicitly allowed and not denied to access the server.
+.IP tcp_deny
+Regular expression in Perl format (see perlre(1)) to specify which IPs
+are not allowed to connect.  This is an optional value that has no
+default.  An example value is "192\\.168\\..*".
+.IP user_sum
+Fields for which running averages will be kept for each user.  This can
+be changed to slightly reduce overhead, but modifying this setting is
+not recommended without full understanding of the source code.  The
+default value is "cpu mem ram io_bytes io_ops io_reads io_read_bytes
+io_writes io_write_bytes".
+./"################################################################
+.SH "LOAD BALANCING POLICIES"
+./"################################################################
+Policies are expressions that evaluate to numeric values.  When a policy
+is evaluated, the host with the lowest non-negative value will be
+returned to the client.  Hosts with negative values or whose last update
+was more than host_timeout seconds in the past will be considered
+down.  If more than one host has the lowest value, one will be chosen at
+random.
+.PP
+Policy expressions are composed of terms corresponding to various load
+metrics, special functions, and a subset of Perl operators.  Long lines
+may be broken with the line continuation operator ("\\").
+./"================================================================
+.SS "Operators"
+./"================================================================
+Ballast policies support a subset of Perl operators.  See perlop(1)
+for detailed descriptions.  Precedence can be forced in the usual manner
+with parentheses.
+.PP
+./"----------------------------------------------------------------
+Arithmetic and String Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+! ~ * / % + - << >> & | ^ ** abs() .
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+Arithmetic Relational Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+< > <= >= == != <=>
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+String Relational Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+cmp eq ge gt le lt ne
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+Logical Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+&& ||
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+Conditional Operator
+./"----------------------------------------------------------------
+.RS
+.nf
+?:
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+Binding Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+=~ !~
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+Quote-like Operators
+./"----------------------------------------------------------------
+.RS
+.nf
+q() qr()
+.fi
+.PP
+Note that parentheses are the only divider supported with q and qr.
+The arbitrary dividers normally available in Perl expressions are not
+supported (e.g. "q|this is a string|").
+.RE
+./"================================================================
+.SS "Functions"
+./"================================================================
+Two special functions can be used to compute values across all
+sessions and associated users on each system.  Each function is given an
+expression argument, which is in the same form as a policy expression
+with the addition of some special terms shown in "Product() and Sum()
+Terms".  These functions are only available when the "user_load" setting
+has been kept enabled.
+.PP
+./"----------------------------------------------------------------
+product(expression)
+./"----------------------------------------------------------------
+.RS
+.nf
+compute product of expression for all sessions on host
+.fi
+.RE
+.PP
+./"----------------------------------------------------------------
+sum(expression)
+./"----------------------------------------------------------------
+.RS
+.nf
+compute sum of expression for all sessions on host
+.fi
+.RE
+./"================================================================
+.SS "Terms"
+./"================================================================
+The following standard terms may be used in addition to any terms
+inserted by custom hooks (see "load_hook" in "Agent Configuration").
+.PP
+./"----------------------------------------------------------------
+System Terms
+./"----------------------------------------------------------------
+.RS
+.PP
+./"----------------------------------------------------------------
+Miscellaneous
+./"----------------------------------------------------------------
+.RS
+.IP "arg0, arg1, ... argN"
+nth extra argument given to client by user (counting begins at first
+argument after alias name as in "ballast alias_name arg0 arg1 ... argN).
+.IP boot_time
+boot time in seconds since epoch
+.IP host
+host name
+.IP random
+random integer between 1 and 100
+.IP sessions
+currently active ssh sessions (only available when "user_load" setting
+is enabled)
+.IP time
+last data update in seconds since epoch
+.IP uptime
+seconds since boot
+.IP users
+users who have completed any ssh session (only available when
+"user_load" setting has been kept enabled)
+.RE
+.PP
+./"----------------------------------------------------------------
+CPU Load
+./"----------------------------------------------------------------
+.RS
+.IP cpu
+cpu time in jiffies since last data update
+.IP cpus
+number of cpus
+.IP intrs
+interrupts serviced since last update
+.IP load_1
+average run queue length over last minute
+.IP load_5
+average run queue length over last 5 minutes
+.IP load_15
+average run queue length over last 15 minutes
+.IP proc_forks
+process forks since last update
+.IP proc_switches
+process context switches since last update
+.IP procs
+currently active processes
+.RE
+.PP
+./"----------------------------------------------------------------
+I/O Load
+./"----------------------------------------------------------------
+.RS
+.IP io_ops
+i/o operations on all disks since last update
+.IP io_read_sectors
+i/o sectors read on all disks since last update
+.IP io_read_time
+i/o read time in seconds on all disks since last update
+.IP io_reads
+i/o reads on all disks since last update
+.IP io_sectors
+i/o sectors read/written on all disks since last update
+.IP io_time
+i/o time in seconds on all disks since last update
+.IP io_write_sectors
+i/o sectors written on all disks since last update
+.IP io_write_time
+i/o write time in seconds on all disks since last update
+.IP io_writes
+i/o writes on all disks since last update
+.RE
+.PP
+./"----------------------------------------------------------------
+Memory Load
+./"----------------------------------------------------------------
+.RS
+.IP page_in
+pages swapped in since last update
+.IP page_out
+pages swapped out since last update
+.IP ram
+used ram in kB
+.IP ram_free
+free ram in kB
+.IP ram_total
+total ram in kB
+.IP swap
+swap space used in kB since last update
+.IP swap_free
+free swap space in kB
+.IP swap_in
+processes swapped in since last update
+.IP swap_out
+processes swapped out since last update
+.IP swap_total
+total swap space in kB
+.RE
+.PP
+./"----------------------------------------------------------------
+Network Load
+./"----------------------------------------------------------------
+.RS
+.IP net_bytes
+network bytes read/written on all interfaces since last update
+.IP net_ops
+network operations on all interfaces since last update
+.IP net_read_bytes
+network bytes read on all interfaces since last update
+.IP net_reads
+network reads on all interfaces since last update
+.IP net_write_bytes
+network bytes written on all interfaces since last update
+.IP net_writes
+network writes on all interfaces since last update
+.RE
+.RE
+.PP
+./"----------------------------------------------------------------
+Invoking User Terms
+./"----------------------------------------------------------------
+.RS
+These terms (except client_ip, user_gid, and user_uid) are only
+available when the "user_load" setting has been kept enabled.
+.PP
+./"----------------------------------------------------------------
+User Load
+./"----------------------------------------------------------------
+.RS
+.IP client_ip
+IP address of invoking client
+.IP user_cpu
+average cpu time in jiffies per session of invoking user
+.IP user_gid
+gid of invoking user
+.IP user_io_bytes
+average i/o bytes per session of invoking user (available with agents
+on kernels >= 2.6.20)
+.IP user_io_ops
+average i/o operations per session of invoking user (available with
+agents on kernels >= 2.6.20)
+.IP user_io_read_bytes
+average i/o bytes read per session of invoking user (available with
+agents on kernels >= 2.6.20)
+.IP user_io_reads
+average i/o reads per session of invoking user (available with agents
+on kernels >= 2.6.20)
+.IP user_io_write_bytes
+average i/o bytes written per session of invoking user (available with
+agents on kernels >= 2.6.20)
+.IP user_io_writes
+average i/o writes per session of invoking user (available with agents
+on kernels >= 2.6.20)
+.IP user_mem
+average memory usage in bytes per session of invoking user
+.IP user_ram
+average ram usage in pages per session of invoking user
+.IP user_sessions
+number of sessions of invoking user
+.IP user_time
+average session time in seconds of invoking user
+.IP user_uid
+uid of invoking user
+.RE
+.PP
+./"----------------------------------------------------------------
+User Rank
+./"----------------------------------------------------------------
+.RS
+.IP user_cpu_rank
+users with lower average cpu time per session than invoking user
+.IP user_io_bytes_rank
+users with lower average i/o bytes per session than invoking user
+(available with agents on kernels >= 2.6.20)
+.IP user_io_ops_rank
+users with lower average i/o operations per session than invoking user
+(available with agents on kernels >= 2.6.20)
+.IP user_io_read_bytes_rank
+users with lower average i/o bytes read per session than invoking user
+(available with agents on kernels >= 2.6.20)
+.IP user_io_reads_rank
+users with lower average i/o reads per session than invoking user
+(available with agents on kernels >= 2.6.20)
+.IP user_io_write_bytes_rank
+users with lower average i/o bytes written per session than invoking
+user (available with agents on kernels >= 2.6.20)
+.IP user_io_writes_rank
+users with lower average i/o writes per session than invoking user
+(available with agents on kernels >= 2.6.20)
+.IP user_mem_rank
+users with lower average memory usage in bytes per session than
+invoking user
+.IP user_ram_rank
+users with lower average ram usage per session than invoking user
+.IP user_time_rank
+users with lower average session time than invoking user
+.IP user_sessions_rank
+users with lower number of sessions than invoking user
+.RE
+.RE
+.PP
+./"----------------------------------------------------------------
+Product() and Sum() Terms
+./"----------------------------------------------------------------
+.RS
+These terms can only be used within the expression argument of the
+product() and sum() functions and are only available when the
+"user_load" setting has been kept enabled.  They are evaluated against
+each session/user on the system.
+.PP
+./"----------------------------------------------------------------
+Session Load
+./"----------------------------------------------------------------
+.RS
+.IP session_i_cpu
+cpu time in jiffies of session i
+.IP session_i_io_bytes
+i/o bytes of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_io_ops
+i/o operations of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_io_read_bytes
+i/o bytes read of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_io_reads
+i/o reads of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_io_write_bytes
+i/o bytes written of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_io_writes
+i/o writes of session i (available with agents on kernels >= 2.6.20)
+.IP session_i_mem
+memory usage in bytes of session i
+.IP session_i_ram
+ram usage in pages of session i
+.IP session_i_time
+session time in seconds of session i
+.RE
+.PP
+./"----------------------------------------------------------------
+User Load
+./"----------------------------------------------------------------
+.RS
+.IP user_i_cpu
+average cpu time in jiffies per session of session i user
+.IP user_i_io_bytes
+average i/o bytes per session of session i user (available with agents
+on kernels >= 2.6.20)
+.IP user_i_io_ops
+average i/o operations per session of session i user (available with
+agents on kernels >= 2.6.20)
+.IP user_i_io_read_bytes
+average i/o bytes read per session of session i user (available with
+agents on kernels >= 2.6.20)
+.IP user_i_io_reads
+average i/o reads per session of session i user (available with agents
+on kernels >= 2.6.20)
+.IP user_i_io_write_bytes
+average i/o bytes written per session of session i user (available
+with agents on kernels >= 2.6.20)
+.IP user_i_io_writes
+average i/o writes per session of session i user (available with
+agents on kernels >= 2.6.20)
+.IP user_i_mem
+average memory usage in bytes per session of session i user
+.IP user_i_ram
+average ram usage in pages per session of session i user
+.IP user_i_time
+average session time in seconds of session i user
+.IP user_i_sessions
+number of sessions of session i user
+.RE
+.PP
+./"----------------------------------------------------------------
+User Rank
+./"----------------------------------------------------------------
+.RS
+.IP user_i_cpu_rank
+users with lower average cpu time per session than session i user
+.IP user_i_io_bytes_rank
+users with lower average i/o bytes per session than session i user
+(available with agents on kernels >= 2.6.20)
+.IP user_i_io_ops_rank
+users with lower average i/o operations per session than session i
+user (available with agents on kernels >= 2.6.20)
+.IP user_i_io_read_bytes_rank
+users with lower average i/o bytes read per session than session i
+user (available with agents on kernels >= 2.6.20)
+.IP user_i_io_reads_rank
+users with lower average i/o reads per session than session i user
+(available with agents on kernels >= 2.6.20)
+.IP user_i_io_write_bytes_rank
+users with lower average i/o bytes written per session than session i
+user (available with agents on kernels >= 2.6.20)
+.IP user_i_io_writes_rank
+users with lower average i/o writes per session than session i user
+(available with agents on kernels >= 2.6.20)
+.IP user_i_mem_rank
+users with lower average memory usage in bytes per session than
+session i user (available with agents on kernels >= 2.6.20)
+.IP user_i_ram_rank
+users with lower average ram usage per session than session i user
+.IP user_i_time_rank
+users with lower average session time than session i user
+.IP user_i_sessions_rank
+users with lower number of sessions than session i user
+.RE
+.RE
+.PP
+./"----------------------------------------------------------------
+Absolute Terms
+./"----------------------------------------------------------------
+.RS
+These terms are used internally to compute differences between updates.
+They are not meant to be used directly, but can be if desired.
+.PP
+./"----------------------------------------------------------------
+CPU Load
+./"----------------------------------------------------------------
+.RS
+.IP d_cpu
+cpu time in jiffies since boot
+.IP d_intrs
+interrupts serviced since boot
+.IP d_proc_forks
+process forks since boot
+.IP d_proc_switches
+process context switches since boot
+.RE
+.PP
+./"----------------------------------------------------------------
+I/O Load
+./"----------------------------------------------------------------
+.RS
+.IP d_io_ops
+i/o operations on all disks since boot
+.IP d_io_read_sectors
+i/o read sectors on all disks since boot
+.IP d_io_read_time
+i/o read time on all disks since boot
+.IP d_io_reads
+i/o reads on all disks since boot
+.IP d_io_sectors
+i/o sectors on all disks since boot
+.IP d_io_time
+i/o time on all disks since boot
+.IP d_io_write_sectors
+i/o operations on all disks since boot
+.IP d_io_write_time
+i/o write time on all disks since boot
+.IP d_io_writes
+i/o writes on all disks since boot
+.RE
+.PP
+./"----------------------------------------------------------------
+Memory Load
+./"----------------------------------------------------------------
+.RS
+.IP d_page_in
+pages swapped in since boot
+.IP d_page_out
+pages swapped out since boot
+.IP d_swap_in
+processes swapped in since boot
+.IP d_swap_out
+processes swapped out since boot
+.RE
+.PP
+./"----------------------------------------------------------------
+Network Load
+./"----------------------------------------------------------------
+.RS
+.IP d_net_bytes
+network bytes read/written on all interfaces since boot
+.IP d_net_ops
+network operations on all interfaces since boot
+.IP d_net_read_bytes
+network bytes read on all interfaces since boot
+.IP d_net_reads
+network reads on all interfaces since boot
+.IP d_net_write_bytes
+network bytes written on all interfaces since boot
+.IP d_net_writes
+network writes on all interfaces since boot
+.RE
+.RE
+./"================================================================
+.SS "Conditional Policies"
+./"================================================================
+The flexibility of Ballast policy expressions allows very advanced
+balancing policies to be specified.  A few example uses that may be
+combined arbitrarily are illustrated below.
+.PP
+./"----------------------------------------------------------------
+Client-Specific Balancing
+./"----------------------------------------------------------------
+.RS
+Balancing decisions can be made on a per-client basis using the
+"client_ip" term.  The basic form of a client-specific expression is:
+.PP
+.RS
+.nf
+client_ip =~ qr(^10\\.10\\.\\d+.\\d+) ? expr1 : expr2
+.fi
+.RE
+.PP
+In this case, clients on subnet 10.10.0.0/16 are balanced by expr1
+while all other clients are balanced by expr2.  As an example, suppose a
+given border host functions as a file transfer proxy to internal hosts.
+In this case, connections from that host would like to minimize I/O and
+network loads to achieve faster transfers whereas other hosts are still
+concerned with other metrics.
+.RE
+.PP
+./"----------------------------------------------------------------
+Host-Specific Balancing
+./"----------------------------------------------------------------
+.RS
+Balancing decisions can be made on a per-host basis using the "host"
+term.  The basic form of a host-specific expression is:
+.PP
+.RS
+.nf
+host eq q(host1) ? expr1 : expr2
+.fi
+.RE
+.PP
+In this case, the load of host host1 is evaluated against expr1 while
+all other hosts are evaluated against expr2.  As an example, suppose a
+system is being used for testing and should only be available if all
+other hosts are down.  Its expression can be set to a large value while
+others are balanced by the normal policy.
+.RE
+.PP
+./"----------------------------------------------------------------
+User/Group-Specific Balancing
+./"----------------------------------------------------------------
+.RS
+Balancing decision can be made on a per-user or per-group basis using
+the "user_uid" or "user_gid" terms.  The basic form of a user-specific
+expression is:
+.PP
+.RS
+.nf
+user_uid == 1001 ? expr1 : expr2
+.fi
+.RE
+.PP
+Likewise, the basic form of a group-specific expression is:
+.PP
+.RS
+.nf
+user_gid == 1001 ? expr1 : expr2
+.fi
+.RE
+.PP
+In this case, the user/group whose uid/gid is 1001 will be balanced by
+expr1 while all other users will be balanced by expr2.  As an example,
+suppose premium/admin users are allowed to access all hosts while
+trial/normal users can only go to a certain subset.  Additional
+user-specific policies are shown in the next section.
+.RE
+.PP
+./"----------------------------------------------------------------
+User-Directed Balancing
+./"----------------------------------------------------------------
+.RS
+Balancing decisions can be influenced by the user (or by a program
+acting on the user's behalf) using additional arguments given on the
+command line.  The basic form of a user-directed expression is:
+.PP
+.RS
+.nf
+arg0 eq q(name) ? expr1 : expr2
+.fi
+.RE
+.PP
+In this case, if the first additional matches a predetermined name,
+expr1 will be used for balancing.  Otherwise, expr2 will be used.  As an
+example, suppose users wish to choose the balancing policy most relevant
+to each invocation.  In this case, an argument of "cpu" could be
+configured to balance by lowest cpu load, "mem" could be configured to
+balance by lowest memory load, etc.
+.RE
+.PP
+./"----------------------------------------------------------------
+Host-Subset Balancing
+./"----------------------------------------------------------------
+.RS
+Balancing decisions can be made between a specific subset of hosts
+using additional arguments given on the command line.  The basic form of
+a host-subset expression is:
+.PP
+.RS
+.nf
+arg0 =~ (qr(^|,) . host . qr(,|$)) ? expr1 : -1
+.fi
+.RE
+.PP
+In this case, if the first additional argument is a set of hosts
+separated by commas, any hosts contained in that set will be balanced by
+expr1 while all other hosts will be marked as unavailable with -1.  As
+an example, suppose another application derives a set of hosts that have
+a particular property that is beyond the scope of the balancer.  In this
+case, that application can invoke the balancer internally with that set
+of hosts to ensure that the host utilized will be available and have the
+lowest load.
+.RE
+./"================================================================
+.SS "Sample Policies"
+./"================================================================
+The following sample policies correspond to the policies described in
+the paper "Dynamic Load Balancing of SSH Sessions Using User-Specific
+Selection Policies" by P.Z. Kolano from Proc. of the 15th IEEE Symp.
+on Computers and Communication, Riccione, Italy, Jun. 22-25, 2010
+(available at https://pkolano.github.io/papers/iscc10.pdf).  The least
+load and non-dynamic predictive policies assume CPU load as the least
+load metric.
+.TP
+./"----------------------------------------------------------------
+Random
+./"----------------------------------------------------------------
+.RS
+Choose the system at random.
+.PP
+.nf
+random
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Round Robin
+./"----------------------------------------------------------------
+Choose systems sequentially.
+.PP
+.RS
+It is not currently possible to specify a round robin policy.  This
+may be added in the future.
+.RE
+.TP
+./"----------------------------------------------------------------
+Least Users
+./"----------------------------------------------------------------
+Choose the system with the lowest number of users.
+.PP
+.RS
+.nf
+sessions
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Least Load
+./"----------------------------------------------------------------
+Choose the system with the lowest load.
+.PP
+.RS
+.nf
+cpu
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Predictive
+./"----------------------------------------------------------------
+Choose the system with the lowest sum of the average load per sample
+interval of the users currently on each system (the "predicted load").
+.PP
+.RS
+.nf
+sum(user_i_cpu)
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Predictive Least Load
+./"----------------------------------------------------------------
+Choose the system with the lowest sum of the actual and predicted loads.
+.PP
+.RS
+.nf
+cpu + sum(user_i_cpu)
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Predictive Average Overlap
+./"----------------------------------------------------------------
+Choose the system with the lowest sum of the actual and predicted load
+with each user's predicted contribution reduced in proportion to the
+ratio of the invoking user's average session duration to that of their
+own (the "predicted average overlap load").  No reduction is made for
+users with an average session duration greater than the invoking user's.
+The idea of this strategy is that the invoking user will be affected
+less by the future activity of another user if they typically stay
+logged on for longer.
+.PP
+.RS
+.nf
+cpu + sum(user_i_cpu * \\
+    (user_i_time > user_time ? 1 : (user_i_time / user_time)))
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Predictive Overlap
+./"----------------------------------------------------------------
+Choose the system with the lowest sum of the actual and predicted
+average overlap load, but with the predicted contribution reduced even
+further by using the average session duration minus the already elapsed
+session duration for each user (the "predicted overlap load").  The
+predicted contribution of users who have been on the system longer than
+their average session duration will be zero.  The idea of this strategy
+is that other users may affect the future activity of the invoking user
+even less if they are reaching the point at which they normally log off.
+.PP
+.RS
+.nf
+cpu + sum(user_i_cpu *                  \\
+    (session_i_time > user_i_time ? 0 : \\
+        (user_i_time - session_i_time) / user_time))
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Dynamic Least Load
+./"----------------------------------------------------------------
+Choose the system according to "Least Load" but dynamically adjust the
+load metric according to the historical utilization of the invoking
+user.  Use composite CPU and memory for users above the 75th percentile
+of both.  Use memory for users above the 75th percentile of memory
+usage.  Use CPU for users above the 75th percentile of CPU usage and as
+the default metric for all other users.
+.PP
+.RS
+.nf
+user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \\
+    cpu * mem :                                                \\
+    (user_mem_rank / users >= .75 ?                            \\
+        mem :                                                  \\
+        cpu)
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Dynamic Predictive Least Load
+./"----------------------------------------------------------------
+Choose the system according to "Predictive Least Load" but dynamically
+adjust the load metric according to the historical utilization of the
+invoking user.  Use composite CPU and memory for users above the 75th
+percentile of both.  Use memory for users above the 75th percentile of
+memory usage.  Use CPU for users above the 75th percentile of CPU usage
+and as the default metric for all other users.
+.PP
+.RS
+.nf
+user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \\
+    cpu * mem + sum(user_i_cpu * user_i_mem) :                 \\
+    (user_mem_rank / users >= .75 ?                            \\
+        mem + sum(user_i_mem) :                                \\
+        cpu + sum(user_i_cpu))
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Dynamic Predictive Average Overlap
+./"----------------------------------------------------------------
+Choose the system according to "Predictive Average Overlap" but
+dynamically adjust the load metric according to the historical
+utilization of the invoking user.  Use composite CPU and memory for
+users above the 75th percentile of both.  Use memory for users above the
+75th percentile of memory usage.  Use CPU for users above the 75th
+percentile of CPU usage and as the default metric for all other users.
+.PP
+.RS
+.nf
+user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ?       \\
+    cpu * mem + sum(user_i_cpu * user_i_mem *                        \\
+        (user_i_time > user_time ? 1 : (user_i_time / user_time))) : \\
+    (user_mem_rank / users >= .75 ?                                  \\
+        mem + sum(user_i_mem *                                       \\
+            (user_i_time > user_time ? 1 :                           \\
+                (user_i_time / user_time))) :                        \\
+        cpu + sum(user_i_cpu *                                       \\
+            (user_i_time > user_time ? 1 :                           \\
+                (user_i_time / user_time))))
+.fi
+.RE
+.TP
+./"----------------------------------------------------------------
+Dynamic Predictive Overlap
+./"----------------------------------------------------------------
+Choose the system according to "Predictive Overlap" but dynamically
+adjust the load metric according to the historical utilization of the
+invoking user.  Use composite CPU and memory for users above the 75th
+percentile of both.  Use memory for users above the 75th percentile of
+memory usage.  Use CPU for users above the 75th percentile of CPU usage
+and as the default metric for all other users.
+.PP
+.RS
+.nf
+user_cpu_rank / users >= .75 && user_mem_rank / users >= .75 ? \\
+    cpu * mem + sum(user_i_cpu * user_i_mem *                  \\
+        (session_i_time > user_i_time ? 0 :                    \\
+            (user_i_time - session_i_time) / user_time)) :     \\
+    (user_mem_rank / users >= .75 ?                            \\
+        mem + sum(user_i_mem *                                 \\
+            (session_i_time > user_i_time ? 0 :                \\
+                (user_i_time - session_i_time) / user_time)) : \\
+        cpu + sum(user_i_cpu *                                 \\
+            (session_i_time > user_i_time ? 0 :                \\
+                (user_i_time - session_i_time) / user_time)))
+.fi
+.RE
+.RE
+./"################################################################
+.SH "FILES"
+./"################################################################
+/etc/ballastrc
+.RS
+This file specifies various configuration items that apply to the
+Ballast client, server, and agent.
+.RE
+./"################################################################
+.SH "AUTHOR"
+./"################################################################
+Ballast was written by Paul Kolano.
+./"################################################################
+.SH "SEE ALSO"
+./"################################################################
+ballast(1), ballast-agent(1), ballastd(1), netcat(1), perlop(1),
+tcpconnect(1)
