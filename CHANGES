@@ -64,3 +64,11 @@ CHANGES
         address instead of host name (contribution by B. Roose)
     - Added user_gid variable for use in balancing policies (github issue #4)
     - Changed stats generation for better performance with large log files
+
+* Ballast 2.3 (10/05/20)
+    - Added Debian packaging files (contribution by J. Fernyhough)
+    - Added installation via make
+    - Changed documentation to man page format and expanded information
+    - Fixed collection of user I/O info when agent becomes non-root user
+    - Fixed compiler warning in C client
+    - Removed makeenv.sh as it was only for AIX systems with C client
