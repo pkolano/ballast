@@ -11,9 +11,7 @@ Vcs-Browser: https://github.com/pkolano/ballast
 Package: ballast
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
- perl:any,
- libtimedate-perl
-Recommends: libcrypt-cbc-perl
+ perl:any
 Description: Lightweight SSH load balancer supporting user-specific selection policies
  Ballast is a framework that was specifically designed for SSH load balancing by
  taking advantage of the aliasing and proxying capabilities available in most
@@ -41,7 +39,3 @@ Description: Lightweight SSH load balancer supporting user-specific selection po
  specifically to each individual user, the utility to each user can be maximized
  instead of choosing a system that may be best according to a common metric, but
  not ideal for the user's needs.
- .
- Ballast is in active production at the NASA Advanced Supercomputing Facility
- (https://www.nas.nasa.gov/hecc/support/kb/entry/233) and has handled over 75M
- balancing requests (as of May 2018) since deployment in June 2009.

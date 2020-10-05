@@ -2,6 +2,7 @@
 Description=NASA Ballast server
 After=network.target auditd.service
 ConditionPathExists=!/etc/ballastd_not_to_be_run
+ConditionPathExists=/etc/ballastrc
 
 [Service]
 ExecStart=/usr/local/sbin/ballastd

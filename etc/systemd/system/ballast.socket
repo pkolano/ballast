@@ -3,6 +3,7 @@ Description=NASA Ballast server socket
 Before=ballast.service
 Conflicts=ballast.service
 ConditionPathExists=!/etc/ballastd_not_to_be_run
+ConditionPathExists=/etc/ballastrc
 
 [Socket]
 ListenStream=4411
