@@ -1,4 +1,4 @@
-.TH "ballastd" "1" "21 Sept 2020" "" ""
+.TH "ballastd" "1" "02 Jan 2024" "" ""
 ./"################################################################
 .SH "NAME"
 ./"################################################################
@@ -20,11 +20,37 @@ desired.
 .nf
 \fBballastd\fP [-c FILE] --dump [REGEX]
 \fBballastd\fP [-c FILE] --jsondump [REGEX]
+.fi
 .PP
 .RS
 Dump the contents of the load database as "key = value" pairs or JSON
 "key:subkey:value" objects.  An optional regular expression in Perl
 format (see perlre(1)) can be used to filter the output.
+.RE
+.PP
+.nf
+\fBballastd\fP [-c FILE] --add KEY VALUE
+\fBecho\fP KEY VALUE |\fBballastd\fP [-c FILE] --add
+.fi
+.PP
+.RS
+Insert key-value pairs into the database.  A single key and value may
+be given as arguments on the command line.  For adding multiple keys and
+values, any number of key-value pairs may be given (one per line) on
+stdin.  Values may be quoted in either case to include whitespace.
+.RE
+.PP
+.nf
+\fBballastd\fP [-c FILE] --purge REGEX
+\fBecho\fP REGEX |\fBballastd\fP [-c FILE] --purge
+.fi
+.PP
+.RS
+Remove key-value pairs from the database matching the given regular
+expression(s).  When no argument is given, use any number of regular
+expressions given over stdin.  Care should be taken using this option.
+It is recommended that --dump be used first to test what the regular
+expression(s) will be removing.
 .RE
 .PP
 .nf

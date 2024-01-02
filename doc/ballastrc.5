@@ -1,4 +1,4 @@
-.TH "ballastrc" "5" "21 Sept 2020" "" ""
+.TH "ballastrc" "5" "02 Jan 2024" "" ""
 ./"################################################################
 .SH "NAME"
 ./"################################################################
@@ -49,9 +49,10 @@ for the given alias/user.  The default is "-last".
 .IP data_cipher
 The cipher that should be used to encrypt data sent to the server.
 The default is "XXTEA_PP", which is embedded in Ballast components.
-For any other cipher X, the Perl module Crypt::X must be installed.
-An example value is "Rijndael" corresponding to the Crypt::Rijndael
-Perl module.
+Also embedded is "Twofish_PP", which provides better security and better
+performance.  For any other cipher X, the Perl module Crypt::X must be
+installed.  An example value is "Rijndael" corresponding to the
+Crypt::Rijndael Perl module.
 .IP key_file
 The file containing the encryption key used with the specified cipher.
 The default is "/etc/ballast.key".  This file must exist with the same
@@ -73,6 +74,13 @@ The user that the agent/server will run as.  A typical value would be
 .IP data_alias
 The alias to which collected data pertains.  This value is used by the
 server (see "data_alias_*" in "Server Configuration").
+.IP data_host_any
+Only transmit data to first Ballast server that is successful.  The
+default is 0.  This setting can be used when the server has multiple
+interfaces and agents may check-in to different ones depending on
+connectivity and/or access restrictions.  When disabled, agents will
+transmit to all configured servers, intended for redundant
+configurations.
 .IP load_hook
 The path of an optional executable called to generate custom load data
 during each cycle.  This program should print whitespace-separated
@@ -121,6 +129,12 @@ absolute value function "abs()" or the conditional evaluation operator
 The number of seconds to randomly wait before collecting data.  The
 default is 0.  This setting is intended for deployments with many
 agent hosts so they do not all report in at exactly the same time.
+.IP root_hook
+The path of an optional executable called to generate custom load data
+as root during each cycle.  See "load_hook" for additional details.  The
+only difference between "load_hook" and "root_hook" is that "load_hook"
+runs as "run_user" while "root_hook" runs as root before privilege is
+dropped.
 .IP user_load
 Enable collection of user specific information.  The default is 1.
 .IP use_ip_address
@@ -222,6 +236,8 @@ is "ballast".
 .IP syslog_logopt
 Syslog log options when log_file is set to "Sys::Syslog".  The default
 is "ndelay,pid".
+.IP use_fqdn
+Store load info under fully-qualified host name.  The default is 1.
 .IP tcp_allow
 Regular expression in Perl format (see perlre(1)) to specify which IPs
 are allowed to connect.  This is an optional value that has no default,

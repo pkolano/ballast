@@ -1,4 +1,4 @@
-.TH "ballast-agent" "1" "23 Sept 2020" "" ""
+.TH "ballast-agent" "1" "02 Jan 2024" "" ""
 ./"################################################################
 .SH "NAME"
 ./"################################################################
@@ -7,13 +7,34 @@
 .SH "SYNOPSIS"
 ./"################################################################
 .nf
-\fBballast-agent\fP [-c FILE]
+\fBballast-agent\fP [-c FILE] [--no-wait]
 .fi
 .PP
 .RS
 Run the Ballast agent, which gathers load information from the current
 system and sends it to the Ballast server.  A configuration FILE other
-than the system default may be specified, if desired.
+than the system default may be specified and the configured random wait
+may be skipped, if desired.
+.RE
+.PP
+.nf
+\fBballast-agent\fP [-c FILE] [--no-wait] --stdout
+.fi
+.PP
+.RS
+Run the Ballast agent, but output the collected information to stdout
+so it can be forwarded to the server through an intermediary via ssh
+when a direct connection is not available.
+.RE
+.PP
+.nf
+\fBballast-agent\fP [-c FILE] [--no-wait] --stdin
+.fi
+.PP
+.RS
+Run the Ballast agent, but instead of collecting information from the
+local host, read output from another agent over stdin and forward it to
+the server.
 .RE
 ./"################################################################
 .SH "DESCRIPTION"
@@ -28,19 +49,22 @@ the agent during a single run are extremely low (fractions of a CPU
 second) so should have negligible impact on a system when run at the
 recommended frequency of once per minute.  The agent can be customized
 to each environment using an external hook to collect additional
-information.
+information.  Sensitive information can be collected using a separate
+root hook, which runs before the agent drops privilege.
 .PP
 Prior to running the agent, consult ballastrc(5) and configure agent
 items as needed.  The main items of interest are "data_alias", which
-specifies the alias to which collected data pertains, "data_host",
-which specifies the server host, and "key_file", which specifies the
-location of the key to secure communication between server and agents.
-It is strongly recommended to create a key file to secure the integrity
-and privacy of the load data.  If many agents are scheduled to execute
-at the same time via cron, it is beneficial for agents to wait a random
-amount of time before collecting data to prevent large usage spikes in
-the server.  This can be achieved with the "random_wait" setting.  The
-"load_hook" setting can be used to collect custom load information.
+specifies the alias to which collected data pertains, "data_host", which
+specifies the server host, and "key_file", which specifies the location
+of the key to secure communication between server and agents.  It is
+strongly recommended to create a key file to secure the integrity and
+privacy of the load data, especially if a root hook is used.  If many
+agents are scheduled to execute at the same time via cron, it is
+beneficial for agents to wait a random amount of time before collecting
+data to prevent large usage spikes in the server.  This can be achieved
+with the "random_wait" setting.  The "load_hook" and "root_hook"
+settings can be used to collect custom load (or other) information as
+the configured "run_user" or root, respectively.
 .PP
 Once the agent has been configured, it should be set up to run
 periodically.  On a systemd host, the agent can be enabled via timer
@@ -71,9 +95,9 @@ would otherwise not be accessible.
 .PP
 Also note that the agent runs with Perl taint mode enabled (see
 perlsec(1)) so if encrypted communication is enabled, a cipher X other
-than "XXTEA_PP" is used, and the corresponding Crypt::X module is
-installed in a non-standard location (i.e. not listed in @INC by "perl
--V"), then the agent must be invoked using:
+than "XXTEA_PP" or "Twofish_PP" is used, and the corresponding
+Crypt::X module is installed in a non-standard location (i.e. not listed
+in @INC by "perl -V"), then the agent must be invoked using:
 .PP
 .RS
 .nf

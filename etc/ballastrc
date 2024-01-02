@@ -60,7 +60,8 @@ data_host localhost
 ########################
 
 # cipher that should be used to encrypt data sent to server
-#   (requires Crypt::X module installed for a cipher X other than XXTEA_PP)
+#   (requires Crypt::X module installed for a cipher X other
+#     than XXTEA_PP or Twofish_PP)
 #   (example: data_cipher Rijndael)
 #data_cipher XXTEA_PP
 
@@ -83,12 +84,19 @@ run_user nobody
 # alias to which collected data pertains
 data_alias foo
 
-# location of executable called to generate custom load data
+# only transmit data to first Ballast server that is successful
+#data_host_any 0
+
+# location of executable called to generate custom load data as run_user
 #   (example: load_hook /usr/local/bin/myload)
 #load_hook nodefault
 
 # number of seconds to randomly wait before collecting data
 #random_wait 0
+
+# location of executable called to generate custom load data as root
+#   (example: root_hook /usr/local/bin/myrootload)
+#root_hook nodefault
 
 # collect user specific information
 #user_load 1
@@ -184,6 +192,9 @@ policy_foo cpu * ram * io_sectors * net_bytes
 # regex to specify which ips are not allowed to connect
 #   (example: tcp_deny 192\.168\..*)
 #tcp_deny nodefault
+
+# store load info under fully-qualified host name
+#use_fqdn 1
 
 # fields for which running averages will be kept for each user
 #   (do not modify this unless you know what you're doing)

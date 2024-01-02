@@ -31,7 +31,7 @@ according to a common metric, but not ideal for the user's needs.
 
 Ballast is in active production at the NASA Advanced Supercomputing
 Facility (https://www.nas.nasa.gov/hecc/support/kb/entry/233) and has 
-handled over 228M balancing requests (as of Aug. 2020) since deployment
+handled over 324M balancing requests (as of Jan. 2024) since deployment
 in June 2009.
 
 For full details of the Ballast architecture, see
