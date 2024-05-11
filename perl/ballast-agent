@@ -44,7 +44,7 @@ use POSIX qw(setgid setuid);
 use Storable qw(nfreeze);
 use Sys::Hostname;
 
-our $VERSION = 0.24;
+our $VERSION = 0.25;
 
 # untaint PATH
 $ENV{PATH} = "/bin:/usr/bin:/usr/local/bin";
@@ -204,7 +204,7 @@ if (open(FILE, "/proc/diskstats")) {
         $line =~ s/^\s+|\s+$//g;
         my @cols = split(/\s+/, $line);
         splice(@cols, 0, 3);
-        next if (scalar(@cols) != 11);
+        next if (scalar(@cols) < 11);
         $load{d_io_reads} += $cols[0];
         $load{d_io_read_sectors} += $cols[2];
         $load{d_io_read_time} += $cols[3];

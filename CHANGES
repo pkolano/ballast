@@ -84,3 +84,6 @@ CHANGES
     - Added config setting use_fqdn to strip or not strip domain from hosts
     - Fixed inadvertent timeout during ingestion of large load data
     - Fixed missing Time::Zone sometimes needed for embedded Date::Parse
+
+* Ballast 2.5 (05/11/24)
+    - Fixed i/o load collection on 4.18+ kernels due to diskstats format change
